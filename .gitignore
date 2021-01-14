@@ -1,0 +1,14 @@
+**/*.zip
+input
+output
+**/__pycache__
+**/*kate-swp
+**/*.*swp
+**/build
+**/dist
+**/*.egg-info
+**/*.log
+**/temp
+wheel*
+.idea
+
