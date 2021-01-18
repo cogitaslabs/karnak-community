@@ -3,3 +3,4 @@ PyAthena>=2.1.0
 PyAthenaJDBC
 boto3
 psutil
+python-dateutil

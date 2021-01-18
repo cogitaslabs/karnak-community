@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setuptools.setup(
     name="karnak",
-    version="0.1.1",
+    version="0.1.2",
     author="Leonardo Rossi",
     author_email="leorossi@cogitaslabs.com",
     description="Karnak Data Platform Community Libraries",
