@@ -86,3 +86,7 @@ def exception(message, e: Exception, *msg_fmt, file=None, force=False):
     import traceback
     log_generic('ERROR', 4, message + ': ' + str(e), *msg_fmt, file=file, force=force)
     traceback.print_exc()
+
+#
+#
+#
