@@ -35,7 +35,7 @@ def _select_pd_jdbc(sql: str, aws_region: str, database: Optional[str] = None,
 
 
 def _select_pd_rest(sql: str, aws_region: str, database=None, workgroup=None, s3_output_location=None,
-                     method='rest') -> pd.DataFrame:
+                    method='rest') -> pd.DataFrame:
     assert method in ['rest', 'csv']
     klog.trace('running query on athena, method {}: {}', method, ' '.join(sql.split()))
     if klog.log_level > 0:
@@ -88,3 +88,18 @@ def select_pd(sql: str, aws_region: str, database: Optional[str] = None,
     else:  # 'jdbc'
         return _select_pd_jdbc(sql=sql, aws_region=aws_region, database=database,
                                workgroup=workgroup, s3_output_location=s3_output_location)
+
+
+def test_fixture_pd(aws_region: str, workgroup: Optional[str] = None, s3_output_location: Optional[str] = None,
+                    method: str = 'rest'):
+    sql = """
+        SELECT * FROM (VALUES
+            (CAST ('str1' AS VARCHAR), 1, CAST(1 AS BIGINT), 1.0, TRUE, '["elem1", "elem2"]'),
+            ('str2', 2, 2,  2.0, FALSE, '["elem3"]'),
+            ('', 0, 0, 0.0, FALSE, '[]'),
+            (NULL, NULL, NULL, NULL, NULL, NULL)
+        )
+            x(c_str, c_int, c_bigint, c_double, c_boolean, c_json_list);
+"""
+    return select_pd(sql, aws_region=aws_region, workgroup=workgroup, s3_output_location=s3_output_location,
+                     method=method)
