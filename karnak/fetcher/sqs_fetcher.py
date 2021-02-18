@@ -91,7 +91,7 @@ class SqsFetcher:
         qs_results = 0
         qs_workers = 0
         retries = 2
-        kl.trace(f'getting queue sizes (wait {wait_seconds * (retries+1)} s)')
+        kl.trace(f'getting queue sizes (wait up to {wait_seconds * (retries+1)} s)')
         qs = {}
         queues = [self.results_queue] + self.worker_queues
         while i < retries and (qs_results == 0 or qs_workers == 0):
@@ -412,6 +412,7 @@ class SqsFetcherWorker:
     def fetcher_thread_loop(self, thread_num: int):
         sqs_client = ksqs.get_client()
         while self.state == 'working':
+            self.throttle_request()
             items = self.fetch_items(self.items_per_request, sqs_client=sqs_client)
             kl.trace(f'thread {thread_num}: read {len(items)} items from queue')
             if len(items) == 0:
@@ -432,7 +433,7 @@ class SqsFetcherWorker:
     def work(self):
         self.check_worker_state(force_recheck=True)
         if self.state != 'working':
-            kl.warn(f'Nothing to do: fetcher in state {self.state}')
+            kl.warn(f'Nothing to do: worker in state {self.state}')
             return
 
         threads = []
