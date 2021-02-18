@@ -91,7 +91,7 @@ class SqsFetcher:
         qs_results = 0
         qs_workers = 0
         retries = 2
-        kl.debug(f'getting queue sizes (wait {wait_seconds * (retries+1)} s)')
+        kl.trace(f'getting queue sizes (wait {wait_seconds * (retries+1)} s)')
         qs = {}
         queues = [self.results_queue] + self.worker_queues
         while i < retries and (qs_results == 0 or qs_workers == 0):
@@ -105,7 +105,7 @@ class SqsFetcher:
             qs_workers = sum([qs[queue_name]for queue_name in self.worker_queues])
             i += 1
             # sleep and retry if any queue has 0 elements
-            if i < retries and qs_results == 0 or qs_workers == 0:
+            if i < retries and (qs_results == 0 or qs_workers == 0):
                 time.sleep(wait_seconds)
         qs_str = ', '.join([f'{q}: {qs[q]}' for q in qs])
         # kl.trace('queue sizes: ' + qs_str)
@@ -170,10 +170,10 @@ class SqsFetcher:
         ksqs.send_messages(self.worker_queue(strategy=strategy), contents)
 
     def kickoff(self, max_fetch: Optional[int] = None, force_fetch: Optional[List[str]] = None,
-                strategies: Optional[List[str]] = None) -> bool:
+                strategies: Optional[List[str]] = None, force=False) -> bool:
         # test fetch state
         state = self.fetcher_state()
-        if state != 'idle':
+        if state != 'idle' and not force:
             kl.info(f'cannot kickoff {self.name}: current state is {state}.')
             return False
 
@@ -226,7 +226,7 @@ class SqsFetcher:
         # get all messages from result queue
         # TODO: improvement: interactive algorithm that gets less elements each time
         while True:
-            items = self.fetch_items(self.results_queue, max_items=1_000_000_000)
+            items = self.fetch_items(self.results_queue, max_items=100_000)
             if len(items) == 0:
                 break
             fetched_data = [i.content for i in items]
@@ -294,12 +294,14 @@ class FetcherResult:
 
 
 class SqsFetcherWorker:
-    def __init__(self, fetcher: SqsFetcher, strategy: str, n_threads: int = 1, items_per_request: int = 1):
+    def __init__(self, fetcher: SqsFetcher, strategy: str, n_threads: int = 1, items_per_request: int = 1,
+                 loop_pause_seconds: int = 180):
         self.fetcher = fetcher
         self.strategy = strategy
         self.worker_queue_name = self.fetcher.worker_queue(self.strategy)
         self.items_per_request = items_per_request
         self.n_threads = n_threads
+        self.loop_pause_seconds = loop_pause_seconds
 
         self.state = 'idle'
         self.state_check_lock = threading.RLock()
@@ -314,6 +316,16 @@ class SqsFetcherWorker:
         self.state_check_lock.release()
         return ret
 
+    def return_item(self, item: FetcherItem):
+        strategy = item.strategy
+        queue = self.fetcher.worker_queue(strategy)
+        ksqs.return_message(self.worker_queue_name, item.handle)
+
+    def send_item(self, item: FetcherItem):
+        strategy = item.strategy
+        queue = self.fetcher.worker_queue(strategy)
+        ksqs.send_messages(queue, [item.to_string()])
+    
     def resend_item(self, item: FetcherItem):
         strategy = item.strategy
         queue = self.fetcher.worker_queue(strategy)
@@ -344,8 +356,10 @@ class SqsFetcherWorker:
     def decide_failure_action(self, item: FetcherItem, result: FetcherResult) -> (str, str):
         """Return:
                 ('abort', None): do not try again.
+                ('ignore', None): return message to queue.
                 ('retry', None): retry in same strategy.
                 ('retry', 'xpto'): move to strategy xpto.
+                ('restart', 'xpto'): save in current strategy, and also reset errors and create new task in new strategy
         """
         return 'abort', None
 
@@ -364,20 +378,34 @@ class SqsFetcherWorker:
                 item.content = data
                 self.complete_item(item)
             else:  # failure
-                action, strategy = self.decide_failure_action(item, result)
+                action, new_strategy = self.decide_failure_action(item, result)
                 if action == 'abort':
                     self.complete_item(item)
+                elif action == 'ignore':
+                    self.return_item(item)
+                elif action == 'restart':
+                    new_item = FetcherItem(item.key, item.start_ts, new_strategy)
+                    self.send_item(new_item)
+                    self.complete_item(item)
                 else:  # retry
-                    if strategy is None or strategy == self.strategy:
-                        item.current_retries += 1
-                    else:
-                        item.current_retries = 0
+                    item.current_retries += 1
+                    if new_strategy is not None and new_strategy != self.strategy:
+                        item.strategy = new_strategy
                     self.resend_item(item)
 
-    def check_fetcher_state(self, force_recheck=False, sqs_client=None, wait_seconds: Optional[int] = None) -> str:
+    def worker_queue(self) -> str:
+        return self.fetcher.worker_queue(self.strategy)
+
+    def check_worker_state(self, force_recheck=False, sqs_client=None, wait_seconds: Optional[int] = None) -> str:
         self.state_check_lock.acquire()
         if force_recheck or self.state == 'working':
-            self.state = self.fetcher.fetcher_state(sqs_client=sqs_client, wait_seconds=wait_seconds)
+            qs = self.fetcher.queue_sizes(sqs_client=sqs_client, wait_seconds=wait_seconds)
+            qs_workers = qs[self.worker_queue()]
+
+            if qs_workers == 0:
+                self.state = 'done'
+            else:
+                self.state = 'working'
         self.state_check_lock.release()
         return self.state
 
@@ -387,18 +415,22 @@ class SqsFetcherWorker:
             items = self.fetch_items(self.items_per_request, sqs_client=sqs_client)
             kl.trace(f'thread {thread_num}: read {len(items)} items from queue')
             if len(items) == 0:
-                self.check_fetcher_state(force_recheck=False, sqs_client=sqs_client, wait_seconds=20)
+                self.check_worker_state(force_recheck=False, sqs_client=sqs_client, wait_seconds=20)
             else:
                 self.process_batch(items)
         kl.trace(f'thread {thread_num}: finished')
 
-    # TODO: include parameters for optional pauses and stop
+    def loop_pause(self):
+        kl.trace(f'loop pause: {self.loop_pause_seconds} s')
+        time.sleep(self.loop_pause_seconds)
+
     def worker_loop(self):
         while True:
             self.work()
+            self.loop_pause()
 
     def work(self):
-        self.check_fetcher_state(force_recheck=True)
+        self.check_worker_state(force_recheck=True)
         if self.state != 'working':
             kl.warn(f'Nothing to do: fetcher in state {self.state}')
             return

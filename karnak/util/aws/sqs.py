@@ -32,6 +32,17 @@ def remove_messages(queue_name: str, receipt_handles: List[str], sqs_client=None
         sqs_client.delete_message(QueueUrl=queue_url, ReceiptHandle=receipt_handle)
 
 
+def return_message(queue_name: str, receipt_handle: str, sqs_client=None):
+    queue_url, sqs_client = get_queue_url(queue_name, sqs_client)
+    sqs_client.change_message_visibility(QueueUrl=queue_url, ReceiptHandle=receipt_handle, VisibilityTimeout=0)
+
+
+def return_messages(queue_name: str, receipt_handles: List[str], sqs_client=None):
+    queue_url, sqs_client = get_queue_url(queue_name, sqs_client)
+    # TODO implement batch version
+    for receipt_handle in receipt_handles:
+        sqs_client.return_message(QueueUrl=queue_url, ReceiptHandle=receipt_handle)
+
 def send_messages(queue_name: str, messages: list, group_id: Optional[str] = None, sqs_client=None) -> list:
     """
     Returns: list os failed ids
