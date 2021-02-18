@@ -225,10 +225,13 @@ class SqsFetcher:
 
         # get all messages from result queue
         # TODO: improvement: interactive algorithm that gets less elements each time
-        while True:
-            items = self.fetch_items(self.results_queue, max_items=100_000)
+        remaining = qs_results
+        while remaining > 0:
+            messages_to_fetch = max(remaining, 100_000)
+            items = self.fetch_items(self.results_queue, max_items=messages_to_fetch)
             if len(items) == 0:
                 break
+            remaining -= len(items)
             fetched_data = [i.content for i in items]
             fetched_df = pd.DataFrame(fetched_data)
 
