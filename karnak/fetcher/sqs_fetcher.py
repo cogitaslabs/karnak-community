@@ -171,6 +171,9 @@ class SqsFetcher:
 
     def kickoff(self, max_fetch: Optional[int] = None, force_fetch: Optional[List[str]] = None,
                 strategies: Optional[List[str]] = None, force=False) -> bool:
+        if strategies is None:
+            strategies = self.strategies
+
         # test fetch state
         state = self.fetcher_state()
         if state != 'idle' and not force:
@@ -192,9 +195,9 @@ class SqsFetcher:
             return FetcherItem(key=row['key'], start_ts=ref_ts, strategy=row['strategy'])
         df['item'] = df.apply(row_to_item, axis=1)
 
-        for i in range(len(self.strategies)):
-            strategy = self.strategies[i]
+        for strategy in strategies:
             df_strategy = df[df['strategy'] == strategy]
+            kl.debug(f'putting {len(df_strategy)} in {strategy} queue...')
             self.populate_worker_queue(df_strategy['item'].tolist(), strategy)
 
         kl.debug(f'kickoff completed for {self.name}, ref {ref_ts_str}.')
@@ -228,6 +231,7 @@ class SqsFetcher:
         remaining = qs_results
         while remaining > 0:
             messages_to_fetch = max(remaining, 100_000)
+            kl.debug(f'reading {remaining} messages from results queue...')
             items = self.fetch_items(self.results_queue, max_items=messages_to_fetch)
             if len(items) == 0:
                 break
