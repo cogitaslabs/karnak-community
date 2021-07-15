@@ -2,7 +2,7 @@ import karnak.util.log as kl
 import karnak.util.aws.sqs as ksqs
 
 from abc import abstractmethod
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Union
 import datetime
 import time
 import pandas as pd
@@ -32,10 +32,16 @@ class FetcherItem:
         self.fetch_errors = fetch_errors if fetch_errors is not None else []
         self.handle = handle
 
+    def reset_strategy(self, strategy, reset_errors=False):
+        self.strategy = strategy
+        if reset_errors:
+            self.current_retries = 0
+            self.fetch_errors = []
+        return self
+
     def to_string(self):
         filtered_dict = self.__dict__.copy()
         del filtered_dict['handle']
-
         js = json.dumps(filtered_dict, default=json_serial)
         return js
 
@@ -91,7 +97,7 @@ class SqsFetcher:
         qs_results = 0
         qs_workers = 0
         retries = 2
-        kl.trace(f'getting queue sizes (wait up to {wait_seconds * (retries+1)} s)')
+        kl.trace(f'getting queue sizes (wait up to {wait_seconds * (retries + 1)} s)')
         qs = {}
         queues = [self.results_queue] + self.worker_queues
         while i < retries and (qs_results == 0 or qs_workers == 0):
@@ -102,7 +108,7 @@ class SqsFetcher:
                 delayed = int(attr['ApproximateNumberOfMessagesDelayed'])
                 qs[q] = available + in_flight + delayed
             qs_results = qs[self.results_queue]
-            qs_workers = sum([qs[queue_name]for queue_name in self.worker_queues])
+            qs_workers = sum([qs[queue_name] for queue_name in self.worker_queues])
             i += 1
             # sleep and retry if any queue has 0 elements
             if i < retries and (qs_results == 0 or qs_workers == 0):
@@ -111,13 +117,14 @@ class SqsFetcher:
         # kl.trace('queue sizes: ' + qs_str)
         return qs
 
-    def fetcher_state(self, qs: Optional[Dict[str, int]] = None, sqs_client=None, wait_seconds: Optional[int] = None) -> str:
+    def fetcher_state(self, qs: Optional[Dict[str, int]] = None, sqs_client=None,
+                      wait_seconds: Optional[int] = None) -> str:
         """Returns current fetcher state: processing, consolidating, idle."""
 
         if qs is None:
             qs = self.queue_sizes(sqs_client=sqs_client, wait_seconds=wait_seconds)
         qs_results = qs[self.results_queue]
-        qs_workers = sum([qs[queue_name]for queue_name in self.worker_queues])
+        qs_workers = sum([qs[queue_name] for queue_name in self.worker_queues])
 
         if qs_results + qs_workers == 0:
             return 'idle'
@@ -150,7 +157,7 @@ class SqsFetcher:
     # kickoff
     #
 
-    @ abstractmethod
+    @abstractmethod
     def keys_to_fetch(self, max_fetch: Optional[int] = None, force_fetch: Optional[List[str]] = None) -> List[str]:
         return []
 
@@ -193,6 +200,7 @@ class SqsFetcher:
 
         def row_to_item(row):
             return FetcherItem(key=row['key'], start_ts=ref_ts, strategy=row['strategy'])
+
         df['item'] = df.apply(row_to_item, axis=1)
 
         for strategy in strategies:
@@ -206,7 +214,7 @@ class SqsFetcher:
     # consolidator
     #
 
-    @ abstractmethod
+    @abstractmethod
     def save_results(self, df: pd.DataFrame, strategy: str, ref_ts: datetime.datetime,
                      current_file: int, n_files: int,
                      output_folder: str, local_only: bool):
@@ -215,6 +223,9 @@ class SqsFetcher:
     @abstractmethod
     def save_consolidated(self, fetched_df: pd.DataFrame, **args):
         pass
+
+    def data_to_df(self, fetched_data: list) -> pd.DataFrame:
+        return pd.DataFrame(fetched_data)
 
     def consolidate(self, **args):
         kl.debug(f'consolidate {self.name}: start.')
@@ -230,14 +241,14 @@ class SqsFetcher:
         # TODO: improvement: interactive algorithm that gets less elements each time
         remaining = qs_results
         while remaining > 0:
-            messages_to_fetch = max(remaining, 100_000)
+            messages_to_fetch = min(remaining, 100_000)
             kl.debug(f'reading {remaining} messages from results queue...')
             items = self.fetch_items(self.results_queue, max_items=messages_to_fetch)
             if len(items) == 0:
                 break
             remaining -= len(items)
             fetched_data = [i.content for i in items]
-            fetched_df = pd.DataFrame(fetched_data)
+            fetched_df = self.data_to_df(fetched_data)
 
             self.save_consolidated(fetched_df, **args)
 
@@ -283,9 +294,28 @@ class SqsFetcher:
 
         kl.debug(f'purge {self.name}: finish.')
 
+    #
+    # rebalance strategies
+    #
+
+    def rebalance(self, from_strategy: str, to_strategy: str, items_cnt: int):
+        rebalance_cnt = min(items_cnt, 100_000)
+        kl.debug(f'rebalancing {items_cnt} items from {from_strategy} to {to_strategy}')
+        from_queue = self.worker_queue(from_strategy)
+        to_queue = self.worker_queue(to_strategy)
+        if from_queue is None or to_queue is None:
+            kl.error('rebalance not possible: invalid strategy')
+        else:
+            items = self.fetch_items(from_queue, max_items=rebalance_cnt)
+            rebalanced_items = [i.reset_strategy(to_strategy, reset_errors=True) for i in items]
+            self.populate_worker_queue(rebalanced_items, to_strategy)
+            handles = [i.handle for i in items]
+            ksqs.remove_messages(queue_name=from_queue, receipt_handles=handles)
+            kl.info('rebalance: finihed')
+
 
 class FetcherResult:
-    def __init__(self, key: str, results: Optional[dict], elapsed: datetime.datetime,
+    def __init__(self, key: str, results: Union[None, dict, str], elapsed: datetime.datetime,
                  can_retry: bool = False, error_type: str = None, error_message: str = None):
         self.key = key
         self.results = results
@@ -332,7 +362,7 @@ class SqsFetcherWorker:
         strategy = item.strategy
         queue = self.fetcher.worker_queue(strategy)
         ksqs.send_messages(queue, [item.to_string()])
-    
+
     def resend_item(self, item: FetcherItem):
         strategy = item.strategy
         queue = self.fetcher.worker_queue(strategy)
@@ -341,18 +371,24 @@ class SqsFetcherWorker:
 
     def complete_item(self, item: FetcherItem):
         """Put fetcher item in results queue (in case of success or non-retryable failure)"""
-        ksqs.send_messages(self.fetcher.results_queue, [item.to_string()])
-        ksqs.remove_message(self.worker_queue_name, item.handle)
+        try:
+            ksqs.send_messages(self.fetcher.results_queue, [item.to_string()])
+            ksqs.remove_message(self.worker_queue_name, item.handle)
+        except botocore.errorfactory.BatchRequestTooLong as e:
+            kl.warn(f'message too long to put in queue, key: {item.key}, {len(item.to_string())} bytes')
+            ksqs.remove_message(self.worker_queue_name, item.handle)
+        except Exception as e:
+            kl.exception(f'exception putting message in queue: {item.key}', e)
 
     @abstractmethod
-    def fetch_key(self, key: str) -> FetcherResult:
+    def fetch_key(self, key: str, thread_context: dict) -> FetcherResult:
         pass
 
-    def fetch_batch(self, key_batch: List[str]) -> List[FetcherResult]:
+    def fetch_batch(self, key_batch: List[str], thread_context: dict) -> List[FetcherResult]:
         # default implementation
         ret = []
         for key in key_batch:
-            ret.append(self.fetch_key(key))
+            ret.append(self.fetch_key(key, thread_context))
         return ret
 
     @abstractmethod
@@ -370,15 +406,16 @@ class SqsFetcherWorker:
         """
         return 'abort', None
 
-    def process_batch(self, items: List[FetcherItem]):
+    def process_batch(self, items: List[FetcherItem], thread_context: dict):
         # TODO what happens if we have a duplicate key?
         key_batch = [i.key for i in items]
-        results = self.fetch_batch(key_batch)
+        results = self.fetch_batch(key_batch, thread_context)
         for result in results:
             item = items[key_batch.index(result.key)]  # find item
             # fill FetcherItem info and add metadata
             data = self.item_to_data(result, item)
             item.content = data
+            item.is_success = result.is_success
             if result.is_success:
                 # successful ones: move to results
                 kl.debug(f"success fetching {result.key} in {result.elapsed_str()}, attempt {item.current_retries}")
@@ -416,8 +453,12 @@ class SqsFetcherWorker:
         self.state_check_lock.release()
         return self.state
 
+    def new_thread_context(self) -> dict:
+        return {}
+
     def fetcher_thread_loop(self, thread_num: int):
         sqs_client = ksqs.get_client()
+        thread_context = self.new_thread_context()
         while self.state == 'working':
             self.throttle_request()
             items = self.fetch_items(self.items_per_request, sqs_client=sqs_client)
@@ -425,7 +466,7 @@ class SqsFetcherWorker:
             if len(items) == 0:
                 self.check_worker_state(force_recheck=False, sqs_client=sqs_client, wait_seconds=20)
             else:
-                self.process_batch(items)
+                self.process_batch(items, thread_context)
         kl.trace(f'thread {thread_num}: finished')
 
     def loop_pause(self):
@@ -454,6 +495,3 @@ class SqsFetcherWorker:
             t.join()
 
         kl.info(f'worker for {self.strategy} finished: fetcher state {self.state}')
-
-
-
