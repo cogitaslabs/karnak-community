@@ -8,7 +8,7 @@ import time
 import pandas as pd
 import json
 import threading
-
+import botocore
 
 def json_serial(obj):
     """JSON serializer for objects not serializable by default json code"""
