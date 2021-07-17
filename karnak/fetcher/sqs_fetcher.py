@@ -10,6 +10,7 @@ import json
 import threading
 import botocore
 
+
 def json_serial(obj):
     """JSON serializer for objects not serializable by default json code"""
     if isinstance(obj, (datetime.datetime, datetime.date)):
@@ -371,12 +372,15 @@ class SqsFetcherWorker:
 
     def complete_item(self, item: FetcherItem):
         """Put fetcher item in results queue (in case of success or non-retryable failure)"""
+        kl.trace(f'completing item: {item.key}')
+        message_str = item.to_string()
         try:
-            ksqs.send_messages(self.fetcher.results_queue, [item.to_string()])
-            ksqs.remove_message(self.worker_queue_name, item.handle)
-        except botocore.errorfactory.BatchRequestTooLong as e:
-            kl.warn(f'message too long to put in queue, key: {item.key}, {len(item.to_string())} bytes')
-            ksqs.remove_message(self.worker_queue_name, item.handle)
+            if len(message_str) > 262144:
+                kl.warn(f'message too long to put in queue, key: {item.key}, {len(item.to_string())} bytes')
+                ksqs.remove_message(self.worker_queue_name, item.handle)
+            else:
+                ksqs.send_messages(self.fetcher.results_queue, [item.to_string()])
+                ksqs.remove_message(self.worker_queue_name, item.handle)
         except Exception as e:
             kl.exception(f'exception putting message in queue: {item.key}', e)
 
