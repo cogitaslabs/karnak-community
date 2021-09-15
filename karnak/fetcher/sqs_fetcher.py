@@ -228,7 +228,7 @@ class SqsFetcher:
     def data_to_df(self, fetched_data: list) -> pd.DataFrame:
         return pd.DataFrame(fetched_data)
 
-    def consolidate(self, **args):
+    def consolidate(self, max_queue_items: int = 120_000, **args):
         kl.debug(f'consolidate {self.name}: start.')
 
         qs = self.queue_sizes()
@@ -242,9 +242,15 @@ class SqsFetcher:
         # TODO: improvement: interactive algorithm that gets less elements each time
         remaining = qs_results
         while remaining > 0:
-            messages_to_fetch = min(remaining, 100_000)
-            kl.debug(f'reading {remaining} messages from results queue...')
-            items = self.fetch_items(self.results_queue, max_items=messages_to_fetch)
+            messages_to_fetch = min(remaining, 120_000, max_queue_items)
+            kl.debug(f'reading {messages_to_fetch} messages from results queue...')
+            items = []
+            while len(items) < messages_to_fetch:
+                new_items = self.fetch_items(self.results_queue, max_items=messages_to_fetch-len(items))
+                kl.debug(f'read {len(new_items)} new messages.')
+                items.extend(new_items)
+                if len(new_items) == 0:
+                    break
             if len(items) == 0:
                 break
             remaining -= len(items)
@@ -252,9 +258,11 @@ class SqsFetcher:
             fetched_df = self.data_to_df(fetched_data)
 
             self.save_consolidated(fetched_df, **args)
+            del fetched_df
 
             handles = [i.handle for i in items]
             ksqs.remove_messages(queue_name=self.results_queue, receipt_handles=handles)
+            del fetched_data
 
         kl.debug(f'consolidate {self.name}: finish.')
 
@@ -325,7 +333,7 @@ class FetcherResult:
         self.error_type = error_type
         self.error_message = error_message
 
-        self.is_success = self.results is not None
+        self.is_success = self.error_type is None
 
     def elapsed_str(self):
         return str(self.elapsed)
@@ -371,7 +379,7 @@ class SqsFetcherWorker:
         ksqs.remove_message(self.worker_queue_name, item.handle)
 
     def complete_item(self, item: FetcherItem):
-        """Put fetcher item in results queue (in case of success or non-retryable failure)"""
+        """Put fetcher item in results queue (in case of success or failure with no retry)"""
         kl.trace(f'completing item: {item.key}')
         message_str = item.to_string()
         try:

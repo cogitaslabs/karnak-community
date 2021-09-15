@@ -68,7 +68,7 @@ def send_messages(queue_name: str, messages: list, group_id: Optional[str] = Non
 
 def receive_messages(queue_name, max_messages=10, wait_seconds=0, sqs_client=None) -> Dict[(str, str)]:
     """Returns a dict of {message_handle: body}"""
-    queue_url, sqs_client  = get_queue_url(queue_name, sqs_client)
+    queue_url, sqs_client = get_queue_url(queue_name, sqs_client)
 
     remaining_messages = max_messages
     result_messages = {}

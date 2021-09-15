@@ -4,3 +4,5 @@ PyAthenaJDBC
 boto3
 psutil
 python-dateutil
+orjson
+brotli
