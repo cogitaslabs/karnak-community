@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import sys
+
 from pyathena.util import synchronized
 
 import karnak.util.log as kl
@@ -117,6 +119,7 @@ class FetcherQueueItem:
 class FetcherResult:
     def __init__(self, queue_item: FetcherQueueItem,
                  data: Union[None, dict, list, str],
+                 capture_ts: datetime.datetime,
                  elapsed: datetime.timedelta,
                  is_success: bool = True,
                  can_retry: bool = False,
@@ -127,6 +130,7 @@ class FetcherResult:
                  handle: str = None):
         self.queue_item = queue_item
         self.data: Union[None, dict, list, str] = data
+        self.capture_ts: datetime.datetime = capture_ts
         self.elapsed: datetime.timedelta = elapsed
         self.is_success = is_success
         self.can_retry = can_retry
@@ -157,6 +161,7 @@ class FetcherResult:
 
             fr = FetcherResult(queue_item=queue_item,
                                data=d.get('data'),
+                               capture_ts=d.get('capture_ts'),
                                elapsed=elapsed,
                                is_success=d.get('is_success'),
                                can_retry=d.get('can_retry'),
@@ -390,13 +395,18 @@ class KarnakFetcher:
 
     def data_to_df(self, fetched_data: list) -> pd.DataFrame:
         fetched_df = pd.DataFrame(columns=['table', 'raw'])
+        # mem_size_mb = int(sys.getsizeof(fetched_data) / (1024 * 1024))
+        # kl.trace(f'full memory size: {mem_size_mb} MB')
         for table in self.tables:
+            kl.trace(f'converting table {table} to dataframe...')
             split_results = [x for x in fetched_data if x.queue_item.table == table]
+            # mem_size_table_mb = int(sys.getsizeof(split_results) / (1024 * 1024))
+            kl.trace(f'{table} has {len(split_results)} items')
             split_rows = []
             for result in split_results:
                 data_encoded = result.data
                 data_decoded_str = decompress_str_base64(data_encoded, compression=result.compression)
-                data = orjson.loads(data_decoded_str)
+                data = orjson.loads(data_decoded_str) if data_decoded_str is not None else []
 
                 # multiple elements per fetched_data row
                 new_rows = [self.data_row(result, data_item) for data_item in data]
@@ -549,7 +559,8 @@ class KarnakSqsFetcher(KarnakFetcher):
         return ret
 
     def consolidate(self, max_queue_items_per_file: int = 120_000, max_rows_per_file: int = 2_000_000, **args):
-        kl.debug(f'consolidate {self.name}: start.')
+        kl.info(f'consolidate {self.name}: start.')
+        kl.debug(f'max_queue_items_per_file: {max_queue_items_per_file}, max_rows_per_file: {max_rows_per_file} ')
 
         qs = self.queue_sizes()
         qs_results = qs[self.results_queue_name()]
@@ -742,6 +753,7 @@ class KarnakFetcherWorker:
 
     def pack_result(self, item: FetcherQueueItem,
                     data: Union[list, dict, str, None],
+                    capture_ts: datetime.datetime,
                     elapsed: datetime.timedelta,
                     compression: str = None,
                     compression_level=None,
@@ -763,12 +775,13 @@ class KarnakFetcherWorker:
                                                              compression_level=compression_level)
 
         except Exception as e:
-            kl.exception(f'exception for {item.table}, keys {item.keys}', e)
-            can_retry = False
-            error_type = 'exception'
+            kl.exception(f'compression error: exception for {item.table}, keys {item.keys}', e)
+            _can_retry = False
+            error_type = 'compression-error'
             error_message = str(e)
 
         fetcher_result = FetcherResult(item, data=compressed_data,
+                                       capture_ts=capture_ts,
                                        elapsed=elapsed, is_success=_is_success,
                                        can_retry=_can_retry, compression=compression,
                                        error_type=error_type, error_message=error_message,
