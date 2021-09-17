@@ -19,6 +19,7 @@ import base64
 import brotli
 import zlib
 import gc
+import pytz
 
 
 def json_serial(obj):
@@ -34,19 +35,19 @@ class FetcherQueueItem:
                  table: str,
                  extractor: str,
                  current_retries: int = 0,
-                 created_at: Optional[datetime.datetime] = None,
-                 updated_at: Optional[datetime.datetime] = None,
+                 creation_ts: Optional[datetime.datetime] = None,
+                 update_dt: Optional[datetime.datetime] = None,
                  cohort: Optional[str] = None,
                  priority: Optional[int] = None,
                  fetch_errors: Optional[List[str]] = None,
                  handle: str = None):
-        now = datetime.datetime.now()
+        now = datetime.datetime.now(tz=pytz.utc)
         self.keys: List[str] = keys
         self.key_property: str = key_property
         self.table: str = table
         self.extractor: str = extractor
-        self.created_at: datetime.datetime = created_at if created_at is not None else now
-        self.updated_at: datetime.datetime = updated_at if updated_at is not None else now
+        self.creation_ts: datetime.datetime = creation_ts if creation_ts is not None else now
+        self.update_dt: datetime.datetime = update_dt if update_dt is not None else now
         self.cohort: Optional[str] = cohort
         self.priority: Optional[int] = priority
         self.current_retries: int = current_retries
@@ -57,7 +58,7 @@ class FetcherQueueItem:
         ret = self.copy()
         ret.current_retries += 1
         ret.fetch_errors.append(fetch_error)
-        ret.updated_at = datetime.datetime.now()
+        ret.update_dt = datetime.datetime.now(tz=pytz.utc)
         return ret
 
     def copy(self) -> FetcherQueueItem:
@@ -67,7 +68,7 @@ class FetcherQueueItem:
         ret = self.copy()
         ret.fetch_errors = []
         ret.current_retries = 0
-        ret.updated_at = datetime.datetime.now()
+        ret.update_dt = datetime.datetime.now(tz=pytz.utc)
         ret.extractor = self.extractor if extractor is None else extractor
         ret.handle = None
         return ret
@@ -102,8 +103,8 @@ class FetcherQueueItem:
                                  key_property=d.get('key_property'),
                                  table=d.get('table'),
                                  extractor=d.get('extractor'),
-                                 created_at=datetime.datetime.fromisoformat(d.get('created_at')),
-                                 updated_at=datetime.datetime.fromisoformat(d.get('updated_at')),
+                                 creation_ts=datetime.datetime.fromisoformat(d.get('creation_ts')),
+                                 update_dt=datetime.datetime.fromisoformat(d.get('update_dt')),
                                  cohort=d.get('cohort'),
                                  priority=d.get('priority'),
                                  current_retries=d.get('current_retries'),
@@ -131,7 +132,7 @@ class FetcherResult:
                  handle: str = None):
         self.queue_item = queue_item
         self.data: Union[None, dict, list, str] = data
-        self.data_rows: int = rows
+        self.rows: int = rows
         self.capture_ts: datetime.datetime = capture_ts
         self.elapsed: datetime.timedelta = elapsed
         self.is_success = is_success
@@ -148,7 +149,7 @@ class FetcherResult:
     def flat_dict(self) -> dict:
         flat_dict = self.__dict__.copy()
         if self.queue_item is not None:
-            flat_dict.update(flat_dict.__dict__)
+            flat_dict.update(self.queue_item.__dict__)
         del flat_dict['handle']
         del flat_dict['queue_item']
         return flat_dict
@@ -406,7 +407,7 @@ class KarnakFetcher:
 
     def results_df(self, fetched_data: List[FetcherResult]) -> pd.DataFrame:
         flat_data = [x.flat_dict() for x in fetched_data]
-        return pd.DadtaFrame(flat_data)
+        return pd.DataFrame(flat_data)
 
     def data_to_df(self, fetched_data: list) -> pd.DataFrame:
         fetched_df = pd.DataFrame(columns=['table', 'raw'])
@@ -519,14 +520,14 @@ class KarnakSqsFetcher(KarnakFetcher):
 
     @synchronized
     def set_empty_queue(self, queue_name: str):
-        self.empty_queue_control[queue_name] = datetime.datetime.now()
+        self.empty_queue_control[queue_name] = datetime.datetime.now(tz=pytz.utc)
 
     @synchronized
     def is_empty_queue(self, queue_name: str,) -> bool:
         eqc = self.empty_queue_control.get(queue_name)
         if eqc is None:
             return False
-        now = datetime.datetime.now()
+        now = datetime.datetime.now(tz=pytz.utc)
         if now - eqc >= datetime.timedelta(seconds=self.empty_work_queue_recheck_seconds):
             del self.empty_queue_control[queue_name]
             return False
@@ -617,7 +618,7 @@ class KarnakSqsFetcher(KarnakFetcher):
 
     def time_slice_ref(self, df: pd.DataFrame) -> Any:
         """identifier for time slice. by default, the latest timestamp"""
-        return df['capture_ts'].max()
+        return pd.to_datetime(df['capture_ts'].max())
 
     def time_slicing(self, df: pd.DataFrame) -> Generator[(pd.DataFrame, str, Any)]:
         """generator for time slicing. default is by capture date.
@@ -627,13 +628,14 @@ class KarnakSqsFetcher(KarnakFetcher):
         for dt_str in dt_set:
             dt_slice = df[dt_series == dt_str]
             slice_obj = self.time_slice_ref(dt_slice)
-            yield dt_str, dt_slice, slice_obj
+            yield dt_slice, dt_str, slice_obj
 
     def rows_slicing(self, df: pd.DataFrame, max_rows_per_file: int) -> Generator[(pd.DataFrame, int, int)]:
         n_rows = df['rows'].sum()
-        n_files = -(-len(n_rows) // max_rows_per_file)  # rounds up
+        n_files = -(-n_rows // max_rows_per_file)  # rounds up
         rows_accumulator = []
         file_count = 0
+        kl.debug(f'slicing {n_rows} rows from {len(df)} items into {n_files} files...')
 
         def file_slice() -> pd.DataFrame:
             nonlocal file_count, rows_accumulator
@@ -647,11 +649,11 @@ class KarnakSqsFetcher(KarnakFetcher):
             decoded_data_str = decompress_str_base64(result_row['data'], result_row['compression'])
             decoded_data_list = orjson.loads(decoded_data_str) if decoded_data_str is not None else []
             data_rows = [self.prepare_row(result_row, decoded_item) for decoded_item in decoded_data_list]
-            rows_accumulator.append(data_rows)
-            if len(rows_accumulator) >= max_rows_per_file:
+            rows_accumulator.extend(data_rows)
+            while len(rows_accumulator) >= max_rows_per_file:
                 yield file_slice(), file_count, n_files
 
-        if len(rows_accumulator) > 0:
+        while len(rows_accumulator) > 0:
             yield file_slice(), file_count, n_files
 
     @abstractmethod
@@ -666,7 +668,7 @@ class KarnakSqsFetcher(KarnakFetcher):
         tables = set(fetched_df['table'].unique())
         for table in tables:
             table_slice = fetched_df.loc[fetched_df['table'] == table]
-            kl.debug(f'preparing data for table {table} ({len(table_slice)} rows)...')
+            kl.debug(f'preparing data for table {table} ({len(table_slice)} items)...')
 
             # slice by time
             for (time_slice_df, time_slice_id, time_slice_ref) in self.time_slicing(table_slice):
@@ -674,12 +676,12 @@ class KarnakSqsFetcher(KarnakFetcher):
                 # slice into files and prepare dataframe
                 for (prepared_file_df, current_file, n_files) in self.rows_slicing(time_slice_df, max_rows_per_file):
 
-                    self.save_consolidation(prepared_file_df, table, time_slice_id=time_slice_id,
+                    self.save_consolidation(prepared_file_df, table, time_slice_id=time_slice_ref,
                                             time_slice_ref=time_slice_ref,
                                             current_file=current_file, n_files=n_files, **args)
 
     @abstractmethod
-    def save_consolidation(self, table: str, prepared_df: pd.DataFrame,
+    def save_consolidation(self, prepared_df: pd.DataFrame, table: str,
                            time_slice_id: str, time_slice_ref: Any,
                            current_file: int, n_files: int, **args):
         pass
@@ -831,6 +833,7 @@ class KarnakFetcherWorker:
 
     def pack_result(self, item: FetcherQueueItem,
                     data: Union[list, dict, str, None],
+                    rows: int,
                     capture_ts: datetime.datetime,
                     elapsed: datetime.timedelta,
                     compression: str = None,
@@ -860,6 +863,7 @@ class KarnakFetcherWorker:
 
         fetcher_result = FetcherResult(item, data=compressed_data,
                                        capture_ts=capture_ts,
+                                       rows=rows,
                                        elapsed=elapsed, is_success=_is_success,
                                        can_retry=_can_retry, compression=compression,
                                        error_type=error_type, error_message=error_message,
