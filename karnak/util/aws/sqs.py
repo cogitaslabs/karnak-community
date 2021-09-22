@@ -27,9 +27,10 @@ def remove_message(queue_name: str, receipt_handle: str, sqs_client=None):
 
 def remove_messages(queue_name: str, receipt_handles: List[str], sqs_client=None):
     queue_url, sqs_client = get_queue_url(queue_name, sqs_client)
-    # TODO implement batch version
-    for receipt_handle in receipt_handles:
-        sqs_client.delete_message(QueueUrl=queue_url, ReceiptHandle=receipt_handle)
+    chunks = [receipt_handles[i:i+10] for i in range(0, len(receipt_handles), 10)]
+    for chunk in chunks:
+        entries = [{'Id': str(i), 'ReceiptHandle': chunk[i]} for i in range(0, len(chunk))]
+        sqs_client.delete_message_batch(QueueUrl=queue_url, Entries=entries)
 
 
 def return_message(queue_name: str, receipt_handle: str, sqs_client=None):

@@ -6,6 +6,7 @@ from pyathena.util import synchronized
 
 import karnak.util.log as kl
 import karnak.util.aws.sqs as ksqs
+import karnak.util.profiling as kp
 
 from abc import abstractmethod, ABC
 from typing import Dict, List, Optional, Union, Generator, Any
@@ -663,6 +664,8 @@ class KarnakSqsFetcher(KarnakFetcher):
             kl.info('empty dataframe, nothing to save.')
 
         kl.info(f'saving consolidated data for {len(fetched_df)} rows...')
+        kprof = kp.KProfiler()
+        kprof.log_mem('memory usage')
 
         # slice by table
         tables = set(fetched_df['table'].unique())
@@ -676,9 +679,13 @@ class KarnakSqsFetcher(KarnakFetcher):
                 # slice into files and prepare dataframe
                 for (prepared_file_df, current_file, n_files) in self.rows_slicing(time_slice_df, max_rows_per_file):
 
-                    self.save_consolidation(prepared_file_df, table, time_slice_id=time_slice_ref,
+                    self.save_consolidation(prepared_file_df, table, time_slice_id=time_slice_id,
                                             time_slice_ref=time_slice_ref,
                                             current_file=current_file, n_files=n_files, **args)
+                    kprof.log_mem('memory usage before gc')
+                    del prepared_file_df
+                    gc.collect()
+                    kprof.log_mem('memory usage after gc')
 
     @abstractmethod
     def save_consolidation(self, prepared_df: pd.DataFrame, table: str,
