@@ -402,38 +402,38 @@ class KarnakFetcher:
     def consolidate(self, max_queue_items_per_file: int = 120_000, max_rows_per_file: int = 2_000_000, **args):
         pass
 
-    @abstractmethod
-    def data_row(self, result: FetcherResult, data_item: Union[dict, list, str, None]) -> dict:
-        pass
+    # @abstractmethod
+    # def data_row(self, result: FetcherResult, data_item: Union[dict, list, str, None]) -> dict:
+    #     pass
 
     def results_df(self, fetched_data: List[FetcherResult]) -> pd.DataFrame:
         flat_data = [x.flat_dict() for x in fetched_data]
         return pd.DataFrame(flat_data)
 
-    def data_to_df(self, fetched_data: list) -> pd.DataFrame:
-        fetched_df = pd.DataFrame(columns=['table', 'raw'])
-        # mem_size_mb = int(sys.getsizeof(fetched_data) / (1024 * 1024))
-        # kl.trace(f'full memory size: {mem_size_mb} MB')
-        for table in self.tables:
-            kl.trace(f'converting table {table} to dataframe...')
-            split_results = [x for x in fetched_data if x.queue_item.table == table]
-            # mem_size_table_mb = int(sys.getsizeof(split_results) / (1024 * 1024))
-            kl.trace(f'{table} has {len(split_results)} items')
-            split_rows = []
-            for result in split_results:
-                data_encoded = result.data
-                data_decoded_str = decompress_str_base64(data_encoded, compression=result.compression)
-                data = orjson.loads(data_decoded_str) if data_decoded_str is not None else []
-
-                # multiple elements per fetched_data row
-                new_rows = [self.data_row(result, data_item) for data_item in data]
-                split_rows.extend(new_rows)
-
-            if len(split_rows) > 0:
-                df = pd.DataFrame(split_rows)
-                fetched_df = fetched_df.append(df, ignore_index=True)
-
-        return fetched_df
+    # def data_to_df(self, fetched_data: list) -> pd.DataFrame:
+    #     fetched_df = pd.DataFrame(columns=['table', 'raw'])
+    #     # mem_size_mb = int(sys.getsizeof(fetched_data) / (1024 * 1024))
+    #     # kl.trace(f'full memory size: {mem_size_mb} MB')
+    #     for table in self.tables:
+    #         kl.trace(f'converting table {table} to dataframe...')
+    #         split_results = [x for x in fetched_data if x.queue_item.table == table]
+    #         # mem_size_table_mb = int(sys.getsizeof(split_results) / (1024 * 1024))
+    #         kl.trace(f'{table} has {len(split_results)} items')
+    #         split_rows = []
+    #         for result in split_results:
+    #             data_encoded = result.data
+    #             data_decoded_str = decompress_str_base64(data_encoded, compression=result.compression)
+    #             data = orjson.loads(data_decoded_str) if data_decoded_str is not None else []
+    # 
+    #             # multiple elements per fetched_data row
+    #             new_rows = [self.data_row(result, data_item) for data_item in data]
+    #             split_rows.extend(new_rows)
+    # 
+    #         if len(split_rows) > 0:
+    #             df = pd.DataFrame(split_rows)
+    #             fetched_df = fetched_df.append(df, ignore_index=True)
+    # 
+    #     return fetched_df
 
 
 class KarnakSqsFetcher(KarnakFetcher):
@@ -508,8 +508,10 @@ class KarnakSqsFetcher(KarnakFetcher):
     #
 
     def populate_worker_queue(self, items: List[FetcherQueueItem], extractor: str, priority: Optional[int]):
+        worker_queue_name = self.worker_queue_name(extractor=extractor, priority=priority)
+        kl.trace(f'putting {len(items)} messages in queue {worker_queue_name}')
         contents = [i.to_string() for i in items]
-        ksqs.send_messages(self.worker_queue_name(extractor=extractor, priority=priority), contents)
+        ksqs.send_messages(worker_queue_name, contents)
 
     #
     # worker
@@ -657,9 +659,7 @@ class KarnakSqsFetcher(KarnakFetcher):
         while len(rows_accumulator) > 0:
             yield file_slice(), file_count, n_files
 
-    @abstractmethod
     def prepare_consolidation(self, fetched_df: pd.DataFrame, max_rows_per_file: int, **args):
-
         if fetched_df is None or len(fetched_df) == 0:
             kl.info('empty dataframe, nothing to save.')
 
@@ -889,6 +889,10 @@ class KarnakSqsFetcherWorker(KarnakFetcherWorker, ABC):
                          n_threads=n_threads,
                          retries=retries,
                          loop_pause_seconds=loop_pause_seconds)
+
+    def new_thread_context(self) -> KarnakSqsFetcherThreadContext:
+        ctx = KarnakSqsFetcherThreadContext()
+        return ctx
 
     def pop_best_work_queue_item(self,
                                  context: KarnakSqsFetcherThreadContext) -> Optional[FetcherQueueItem]:
