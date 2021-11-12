@@ -6,3 +6,5 @@ psutil
 python-dateutil
 orjson
 brotli
+redshift_connector
+sqlparams
