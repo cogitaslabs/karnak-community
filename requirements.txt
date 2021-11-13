@@ -8,3 +8,4 @@ orjson
 brotli
 redshift_connector
 sqlparams
+sqlalchemy

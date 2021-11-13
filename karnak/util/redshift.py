@@ -1,6 +1,9 @@
 import collections.abc
 import numbers
+from contextlib import contextmanager
 from typing import Optional, Union
+
+from redshift_connector import Connection
 
 import karnak.util.log as klog
 import pandas as pd
@@ -8,6 +11,7 @@ import redshift_connector
 import sqlparams
 import re
 import datetime
+import sqlalchemy.pool
 
 
 class RedshiftConfig:
@@ -17,21 +21,53 @@ class RedshiftConfig:
         self.user = user
         self.password = password
 
+    def connect(self):
+        return redshift_connector.connect(host=self.host, database=self.database,
+                                          user=self.user, password=self.password)
+
 
 default_config: Optional[RedshiftConfig] = None
 paramstyle = 'numeric'
 redshift_connector.paramstyle = 'numeric'
+connection_pool: Optional[sqlalchemy.pool.Pool] = None
 
 
-def set_default_config(config: RedshiftConfig):
+def set_default_config(config: RedshiftConfig, create_connection_pool: bool = True):
     global default_config
     default_config = config
+    if create_connection_pool:
+        pool = sqlalchemy.pool.QueuePool(config.connect, max_overflow=10, pool_size=5)
+        set_connection_pool(pool)
 
 
 def set_parameter_style(style: str):
     assert style in ['qmark', 'numeric', 'named', 'format', 'pyformat']
     global paramstyle
     paramstyle = style
+
+
+@contextmanager
+def get_connection(config: Optional[RedshiftConfig] = None):
+    global connection_pool, default_config
+
+    if config is not None:
+        conn = config.connect()
+    elif connection_pool is not None:
+        conn = connection_pool.connect()
+    elif default_config is not None:
+        conn = default_config.connect()
+    else:
+        return None
+
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+
+def set_connection_pool(pool: sqlalchemy.pool.Pool):
+    global connection_pool
+    connection_pool = pool
 
 
 def paramstyle_numeric_to_plain(query: str, params: list) -> str:
@@ -84,16 +120,15 @@ def convert_paramstyle(sql, params: Union[dict, list, None],
         return converter.format(sql, params)
 
 
-def select_pd(sql: str, params: Union[dict, list, None] = None, config: Optional[RedshiftConfig] = None) -> pd.DataFrame:
+def select_pd(sql: str, params: Union[dict, list, None] = None, config: Optional[RedshiftConfig] = None)\
+        -> pd.DataFrame:
     sql_oneline = ' '.join(sql.split())
     klog.trace('running query on redshift, method: {}, params {}', sql_oneline, params)
     plain_sql, _ = convert_paramstyle(sql_oneline, params, out_style = 'plain')
     klog.trace(f'plain query: {plain_sql}')
-    global default_config
-    _config = config if config is not None else default_config
     _sql, _params = convert_paramstyle(sql_oneline, params)
-    with redshift_connector.connect(host=_config.host, database=_config.database,
-                                    user=_config.user, password=_config.password) as conn:
+
+    with get_connection(config) as conn:
         with conn.cursor() as cursor:
             cursor.execute(_sql, args=_params)
             result = cursor.fetch_dataframe()
