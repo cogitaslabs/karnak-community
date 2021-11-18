@@ -1,4 +1,5 @@
 import karnak.util.log as klog
+import karnak.util.db as kdb
 
 import pandas as pd
 import contextlib
@@ -7,24 +8,38 @@ import pyathena.pandas.util
 from pyathena.pandas.cursor import PandasCursor
 import pyathenajdbc
 import pyathenajdbc.util
-from typing import Optional
+from typing import Optional, Dict, Any, Union
+
+paramstyle = 'numeric'
+
+
+def set_parameter_style(style: str):
+    assert style in ['qmark', 'numeric', 'named', 'format', 'pyformat']
+    global paramstyle
+    paramstyle = style
 
 
 def _select_pd_jdbc(sql: str, aws_region: str, database: Optional[str] = None,
+                    params: Union[dict, list, None] = None,
                     workgroup: Optional[str] = None, s3_output_location: Optional[str] = None) -> pd.DataFrame:
-    klog.trace('running query on athena, method jdbc: {}', ' '.join(sql.split()))
+    sql_one_line = ' '.join(sql.split())
+    klog.trace('running query on athena, method jdbc: {}', sql_one_line)
+    plain_sql, _ = kdb.convert_paramstyle(sql_one_line, params, in_style=paramstyle, out_style='plain')
+    klog.trace(f'plain query: {plain_sql}')
     if klog.log_level > 0:
-        klog.debug('running query on athena, method rest')
+        klog.debug('running query on athena, method jdbc')
 
-    params = {'Workgroup': workgroup,
-              'AwsRegion': aws_region,
-              'S3OutputLocation': s3_output_location}
+    _sql, _params = kdb.convert_paramstyle(sql_one_line, params, in_style=paramstyle, out_style='pyformat')
+
+    connection_params = {'Workgroup': workgroup,
+                         'AwsRegion': aws_region,
+                         'S3OutputLocation': s3_output_location}
     if database is not None:
-        params['Schema'] = database
+        connection_params['Schema'] = database
 
-    with contextlib.closing(pyathenajdbc.connect(**params)) as conn:
+    with contextlib.closing(pyathenajdbc.connect(**connection_params)) as conn:
         with contextlib.closing(conn.cursor()) as cursor:
-            results = cursor.execute(sql)
+            results = cursor.execute(_sql, _params)
             klog.trace('query executed')
 
             if klog.log_level > 0:
@@ -34,24 +49,30 @@ def _select_pd_jdbc(sql: str, aws_region: str, database: Optional[str] = None,
             return df
 
 
-def _select_pd_rest(sql: str, aws_region: str, database=None, workgroup=None, s3_output_location=None,
+def _select_pd_rest(sql: str, aws_region: str, database=None,
+                    params: Union[dict, list, None] = None, workgroup=None, s3_output_location=None,
                     method='rest') -> pd.DataFrame:
     assert method in ['rest', 'csv']
-    klog.trace('running query on athena, method {}: {}', method, ' '.join(sql.split()))
+    sql_one_line = ' '.join(sql.split())
+    klog.trace('running query on athena, method {}: {}', method, sql_one_line)
+    plain_sql, _ = kdb.convert_paramstyle(sql_one_line, params, in_style=paramstyle, out_style='plain')
+    klog.trace(f'plain query: {plain_sql}')
     if klog.log_level > 0:
         klog.debug('running query on athena, method {}', method)
 
-    params = {'work_group': workgroup,
-              'region_name': aws_region,
-              'output_location': s3_output_location}
-    if database is not None:
-        params['schema_name'] = database
-    if method == 'csv':
-        params['cursor_class'] = PandasCursor
+    _sql, _params = kdb.convert_paramstyle(sql_one_line, params, in_style=paramstyle, out_style='pyformat')
 
-    with contextlib.closing(pyathena.connect(**params)) as conn:
+    connection_params = {'work_group': workgroup,
+                         'region_name': aws_region,
+                         'output_location': s3_output_location}
+    if database is not None:
+        connection_params['schema_name'] = database
+    if method == 'csv':
+        connection_params['cursor_class'] = PandasCursor
+
+    with contextlib.closing(pyathena.connect(**connection_params)) as conn:
         with contextlib.closing(conn.cursor()) as cursor:
-            results = cursor.execute(sql)
+            results = cursor.execute(_sql, _params)
             klog.trace('query stats: data scanned: {:.2f} MB, total query time {:.3f}s'.format(
                 results.data_scanned_in_bytes / (1024 * 1024.0),
                 results.total_execution_time_in_millis / 1000.0))
@@ -66,7 +87,7 @@ def _select_pd_rest(sql: str, aws_region: str, database=None, workgroup=None, s3
             return df
 
 
-def select_pd(sql: str, aws_region: str, database: Optional[str] = None,
+def select_pd(sql: str, aws_region: str, params: Union[dict, list, None] = None, database: Optional[str] = None,
               workgroup: Optional[str] = None, s3_output_location: Optional[str] = None,
               method: str = 'rest') -> pd.DataFrame:
     """Runs an sql query in AWS Athena and returns results as pandas dataframe.
@@ -83,10 +104,10 @@ def select_pd(sql: str, aws_region: str, database: Optional[str] = None,
 
     assert method in ['jdbc', 'rest', 'csv']
     if method in ['rest', 'csv']:
-        return _select_pd_rest(sql=sql, aws_region=aws_region, database=database,
+        return _select_pd_rest(sql=sql, aws_region=aws_region, params=params, database=database,
                                workgroup=workgroup, s3_output_location=s3_output_location, method=method)
     else:  # 'jdbc'
-        return _select_pd_jdbc(sql=sql, aws_region=aws_region, database=database,
+        return _select_pd_jdbc(sql=sql, aws_region=aws_region, params=params, database=database,
                                workgroup=workgroup, s3_output_location=s3_output_location)
 
 
