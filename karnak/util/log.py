@@ -55,7 +55,7 @@ def log_generic(level_str, level, message, *msg_fmt, file=None, force=False, thr
             if log_simple:
                 print(f'{level_str}:{msg}\n', file=file, end='')
             else:
-                print(f'{level_str}|{datetime.datetime.now()}|{msg}', file=file, end='')
+                print(f'{level_str}|{datetime.datetime.now()}|{msg}\n', file=file, end='')
 
         if thread_safe:
             with _log_lock:
