@@ -865,15 +865,15 @@ class KarnakFetcherWorker:
         except Exception as e:
             kl.exception(f'compression error: exception for {item.table}, keys {item.keys}', e)
             _can_retry = False
-            error_type = 'compression-error'
-            error_message = str(e)
+            _error_type = 'compression-error'
+            _error_message = str(e)
 
         fetcher_result = FetcherResult(item, data=compressed_data,
                                        capture_ts=capture_ts,
                                        rows=rows,
                                        elapsed=elapsed, is_success=_is_success,
                                        can_retry=_can_retry, compression=compression,
-                                       error_type=error_type, error_message=error_message,
+                                       error_type=_error_type, error_message=_error_message,
                                        response_edition=response_edition)
         return fetcher_result
 
