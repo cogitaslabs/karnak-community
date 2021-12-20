@@ -3,6 +3,12 @@ import argparse
 import karnak.util.athena as ka
 import karnak.util.log as klog
 
+# TODO: rename to athena execute
+# TODO: find right package
+# TODO: standardize command line parameters
+# TODO: standardize db configuration
+
+
 def run(args):
     parser = argparse.ArgumentParser(description='karnak - aws athena query test')
     parser.add_argument('sql', type=str)
@@ -18,6 +24,7 @@ def run(args):
     df = ka.select_pd(sql=args.sql, aws_region=args.region, database=args.database,
                       workgroup=args.workgroup, method=args.method)
     print(df)
+
 
 if __name__ == "__main__":
     run(sys.argv[1:])

@@ -320,7 +320,7 @@ class SqsFetcher:
             self.populate_worker_queue(rebalanced_items, to_strategy)
             handles = [i.handle for i in items]
             ksqs.remove_messages(queue_name=from_queue, receipt_handles=handles)
-            kl.info('rebalance: finihed')
+            kl.info('rebalance: finished')
 
 
 class FetcherResult:

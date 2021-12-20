@@ -1,11 +1,14 @@
+wheel
 pandas
-PyAthena>=2.1.0
-PyAthenaJDBC
-boto3
 psutil
 python-dateutil
 orjson
 brotli
-redshift_connector
 sqlparams
 sqlalchemy
+
+# # Optional dependencies
+# boto3
+# redshift_connector
+# PyAthena>=2.1.0
+# PyAthenaJDBC

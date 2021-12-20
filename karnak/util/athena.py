@@ -21,15 +21,18 @@ def set_parameter_style(style: str):
 
 def _select_pd_jdbc(sql: str, aws_region: str, database: Optional[str] = None,
                     params: Union[dict, list, None] = None,
-                    workgroup: Optional[str] = None, s3_output_location: Optional[str] = None) -> pd.DataFrame:
+                    workgroup: Optional[str] = None,
+                    s3_output_location: Optional[str] = None) -> pd.DataFrame:
     sql_one_line = ' '.join(sql.split())
-    klog.trace('running query on athena, method jdbc: {}', sql_one_line)
-    plain_sql, _ = kdb.convert_paramstyle(sql_one_line, params, in_style=paramstyle, out_style='plain')
+    klog.trace(f'running query on athena, method jdbc: {sql_one_line}')
+    plain_sql, _ = kdb.convert_paramstyle(sql_one_line, params, in_style=paramstyle,
+                                          out_style='plain')
     klog.trace(f'plain query: {plain_sql}')
     if klog.log_level > 0:
         klog.debug('running query on athena, method jdbc')
 
-    _sql, _params = kdb.convert_paramstyle(sql_one_line, params, in_style=paramstyle, out_style='pyformat')
+    _sql, _params = kdb.convert_paramstyle(sql_one_line, params, in_style=paramstyle,
+                                           out_style='pyformat')
 
     connection_params = {'Workgroup': workgroup,
                          'AwsRegion': aws_region,
@@ -50,17 +53,20 @@ def _select_pd_jdbc(sql: str, aws_region: str, database: Optional[str] = None,
 
 
 def _select_pd_rest(sql: str, aws_region: str, database=None,
-                    params: Union[dict, list, None] = None, workgroup=None, s3_output_location=None,
+                    params: Union[dict, list, None] = None, workgroup=None,
+                    s3_output_location=None,
                     method='rest') -> pd.DataFrame:
     assert method in ['rest', 'csv']
     sql_one_line = ' '.join(sql.split())
-    klog.trace('running query on athena, method {}: {}', method, sql_one_line)
-    plain_sql, _ = kdb.convert_paramstyle(sql_one_line, params, in_style=paramstyle, out_style='plain')
+    klog.trace(f'running query on athena, method {method}: {sql_one_line}')
+    plain_sql, _ = kdb.convert_paramstyle(sql_one_line, params, in_style=paramstyle,
+                                          out_style='plain')
     klog.trace(f'plain query: {plain_sql}')
     if klog.log_level > 0:
         klog.debug('running query on athena, method {}', method)
 
-    _sql, _params = kdb.convert_paramstyle(sql_one_line, params, in_style=paramstyle, out_style='pyformat')
+    _sql, _params = kdb.convert_paramstyle(sql_one_line, params, in_style=paramstyle,
+                                           out_style='pyformat')
 
     connection_params = {'work_group': workgroup,
                          'region_name': aws_region,
@@ -83,7 +89,7 @@ def _select_pd_rest(sql: str, aws_region: str, database=None,
                 df = results.as_pandas()
             else:
                 df = pyathena.pandas.util.as_pandas(results)
-            klog.trace('query results converted to dataframe with {} rows.', len(df))
+            klog.trace(f'query results converted to dataframe with {len(df)} rows.')
             return df
 
 

@@ -65,13 +65,15 @@ def set_connection_pool(pool: sqlalchemy.pool.Pool):
     connection_pool = pool
 
 
-def select_pd(sql: str, params: Union[dict, list, None] = None, config: Optional[RedshiftConfig] = None)\
-        -> pd.DataFrame:
+def select_pd(sql: str, params: Union[dict, list, None] = None,
+              config: Optional[RedshiftConfig] = None) -> pd.DataFrame:
     sql_one_line = ' '.join(sql.split())
-    klog.trace('running query on redshift, method: {}, params {}', sql_one_line, params)
-    plain_sql, _ = kdb.convert_paramstyle(sql_one_line, params, in_style=paramstyle, out_style='plain')
+    klog.trace(f'running query on redshift, sql: {sql_one_line}, params {params}')
+    plain_sql, _ = kdb.convert_paramstyle(sql_one_line, params, in_style=paramstyle,
+                                          out_style='plain')
     klog.trace(f'plain query: {plain_sql}')
-    _sql, _params = kdb.convert_paramstyle(sql_one_line, params, in_style=paramstyle, out_style='numeric')
+    _sql, _params = kdb.convert_paramstyle(sql_one_line, params, in_style=paramstyle,
+                                           out_style='numeric')
 
     with _connect(config) as conn:
         with conn.cursor() as cursor:

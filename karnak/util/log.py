@@ -10,7 +10,7 @@ import datetime
 # Logging
 #
 
-LOG_FORMAT = '%(asctime)-15s %(message)s'
+LOG_FORMAT = '%(levelname)-5.5s|%(asctime)-15s|%(message)s'
 logging.basicConfig(format=LOG_FORMAT)
 log_level = 0
 log_simple = False
@@ -55,7 +55,7 @@ def log_generic(level_str, level, message, *msg_fmt, file=None, force=False, thr
             if log_simple:
                 print(f'{level_str}:{msg}\n', file=file, end='')
             else:
-                print(f'{level_str}|{datetime.datetime.now()}|{msg}\n', file=file, end='')
+                print(f'{level_str}|{str(datetime.datetime.now()):23.23s}|{msg}\n', file=file, end='')
 
         if thread_safe:
             with _log_lock:
