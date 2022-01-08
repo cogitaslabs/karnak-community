@@ -48,9 +48,13 @@ def pretty_mem(size_bytes: int, round_decimals: int = 3) -> str:
     return ret
 
 
-def df_memory_usage(df: pd.DataFrame, ) -> int:
+def df_memory_usage(df: pd.DataFrame) -> int:
     """dataframe memory usage in bytes"""
     return df.memory_usage(index=True, deep=True).sum()
+
+
+def df_memory_usage_str(df: pd.DataFrame, round_decimals: int = 2) -> str:
+    return pretty_mem(df_memory_usage(df), round_decimals=round_decimals)
 
 
 def memory_usage(run_gc: bool = True) -> Dict[str, int]:
@@ -89,7 +93,7 @@ def _pretty_usage_str(usage: Dict[str, int], round_decimals: int = 2) -> str:
 
 def memory_usage_str(run_gc: bool = True, round_decimals: int = 2):
     usage = memory_usage(run_gc=run_gc)
-    return _pretty_usage_str(usage)
+    return _pretty_usage_str(usage, round_decimals=round_decimals)
 
 
 class KTimer:
