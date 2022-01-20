@@ -110,7 +110,7 @@ def warning(message, *args, memory: bool = False):
 
 
 def warn(message, *args, memory: bool = False):
-    warning(message, args, memory=memory)
+    warning(message, *args, memory=memory)
 
 
 def error(message, *args, memory: bool = False):

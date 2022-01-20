@@ -1,3 +1,4 @@
+import collections.abc
 
 
 # TODO review
@@ -47,3 +48,7 @@ def safe_join(*elements: str, sep='') -> str:
     """Generic string concatenator. Ignores None elements"""
     non_none = [e for e in elements if e is not None]
     return sep.join(non_none)
+
+
+def is_list_like(obj) -> bool:
+    return isinstance(obj, collections.abc.Sequence) and not isinstance(obj, str)

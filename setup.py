@@ -6,7 +6,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
 
-EXTRAS_REQUIRE_AWS = ['boto3', 'redshift_connector', 'PyAthena>=2.1.0', 'PyAthenaJDBC']
+EXTRAS_REQUIRE_AWS = ['boto3', 'redshift_connector', 'PyAthena>=2.1.0', 'PyAthenaJDBC[SQLAlchemy]']
 EXTRAS_REQUIRE_GCP = []
 EXTRAS_REQUIRE_FULL = EXTRAS_REQUIRE_AWS + EXTRAS_REQUIRE_GCP
 

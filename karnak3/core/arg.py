@@ -1,9 +1,13 @@
-from typing import Optional, Dict
+from typing import Optional, Dict, List, Union, Tuple
 import argparse
 import datetime
 import dateutil.parser
 import pytz
 import os
+
+import karnak3.core.util as ku
+import karnak3.core.time_window as ktw
+from karnak3.core.util.datetime import kdatelike
 
 
 def best_arg(arg_name: str, args: Optional[Dict[str, str]] = None,
@@ -19,7 +23,6 @@ def best_arg(arg_name: str, args: Optional[Dict[str, str]] = None,
     if arg_value is None:
         arg_value = default
     return arg_value
-
 
 def parse_date(date_str):
     try:
@@ -54,3 +57,92 @@ def parse_file_path(path):
         return path
     else:
         raise argparse.ArgumentTypeError(f"{path} is not a valid file")
+
+
+#
+# time windows
+#
+
+def add_window_params(parser: argparse.ArgumentParser,
+                      time_type: str = 'timestamp') -> argparse.ArgumentParser:
+    assert time_type in ['date', 'timestamp']
+    time_parser = parse_timestamp if time_type == 'timestamp' else parse_date
+
+    if time_type == 'date':
+        parser.add_argument('--window-date', type=time_parser,
+                            help='time window consisting of a single date a single date')
+        parser.add_argument('--weekdays', nargs='+', type=str, choices=ku.valid_weekday_str,
+                            help='select only chosen weekdays in time window')
+        parser.add_argument('--last-weekday', type=str, choices=ku.valid_weekday_str,
+                            help='select only last weekday as time window')
+
+    parser.add_argument('--window-start', '--ws', type=time_parser,
+                        help='start of time window, inclusive.')
+    parser.add_argument('--window-end', '--we', type=time_parser,
+                        help='end of time window, exclusive (date not included in range)')
+    parser.add_argument('--auto-window', '-w', type=str, choices=ktw.valid_auto_window,
+                        help='automatic window calculation')
+    parser.add_argument('--days', type=int, default=1,
+                        help='shortcut to set number of days to fetch. '
+                             'Ignored if both window start or window end is present '
+                             'or period is not daily.')
+    parser.add_argument('--year', help='shortcut to download all entries for a chosen year.',
+                        type=int)
+
+    # TODO: add tz parameter if not yet added
+
+    return parser
+
+
+def parse_window_slices(parsed_args,
+                        window_start: Union[datetime.datetime, datetime.date, None] = None,
+                        window_end: Union[datetime.datetime, datetime.date, None] = None,
+                        window_date: Optional[datetime.date] = None,
+                        auto_window: Optional[str] = None,
+                        days: Optional[int] = None,
+                        year: Optional[int] = None,
+                        frequency: Optional[str] = None,
+                        tz=pytz.utc,
+                        time_type: str = 'datetime') \
+        -> List[Tuple[kdatelike, kdatelike]]:
+
+    assert time_type in ['date', 'timestamp']
+    vargs = vars(parsed_args)
+
+    w_start = ku.coalesce(window_start, vargs.get('window_start'))
+    w_end = ku.coalesce(window_end, vargs.get('window_end'))
+    w_date = ku.coalesce(window_date, vargs.get('window_date'))
+    frequency = ku.coalesce(frequency, vargs.get('frequency'), 'none')
+    auto_window = ku.coalesce(auto_window, vargs.get('auto_window'))
+    days = ku.coalesce(days, vargs.get('days'))
+    year = ku.coalesce(year, vargs.get('year'))
+    tz = ku.coalesce(tz, vargs.get('timezone'), pytz.utc)
+    weekdays = vargs['weekdays']
+    last_weekday = vargs['last_weekday']
+
+    # test that no incompatible arguments are used
+    test, message = ktw.validate_time_window(window_start=w_start,
+                                             window_end=w_end,
+                                             window_date=w_date,
+                                             auto_window=auto_window,
+                                             days=days,
+                                             year=year,
+                                             weekdays=weekdays,
+                                             last_weekday=last_weekday,
+                                             frequency=frequency)
+    if not test:
+        raise argparse.ArgumentTypeError(f"'days' must be used with 'window_start' or "
+                                         f"'window_end'")
+
+    window_slices = ktw.decode_time_window_slices(window_start=w_start,
+                                                  window_end=w_end,
+                                                  window_date=w_date,
+                                                  auto_window=auto_window,
+                                                  days=days,
+                                                  year=year,
+                                                  weekdays=weekdays,
+                                                  last_weekday=last_weekday,
+                                                  frequency=frequency,
+                                                  tz=tz,
+                                                  time_type=time_type)
+    return window_slices

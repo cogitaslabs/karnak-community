@@ -102,6 +102,15 @@ class KSqlAlchemyEngine:
     def _result_pd(self, cursor, result) -> Optional[pd.DataFrame]:
         pass
 
+    # TEST compatibility with other libs
+    def test_libs_compatibility(self):
+        from sklearn.preprocessing import MinMaxScaler, PowerTransformer
+        data = [[-1, 2], [-0.5, 6], [0, 10], [1, 18]]
+        scaler = MinMaxScaler()
+        xpto = scaler.fit(data)
+        kl.trace('****** test_libs compatibility ok ****** ')
+
+
     def select_pd(self, sql: str,
                   params: Union[dict, list, None] = None,
                   paramstyle: str = None) -> pd.DataFrame:
@@ -119,5 +128,7 @@ class KSqlAlchemyEngine:
         with contextlib.closing(self._connection()) as conn:
             with conn.cursor() as cursor:
                 result = cursor.execute(_sql, _params)
+                # self.test_libs_compatibility()
                 result = self._result_pd(cursor, result)
+                # self.test_libs()
                 return result

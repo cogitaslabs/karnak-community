@@ -6,6 +6,7 @@ orjson
 brotli
 sqlparams
 sqlalchemy
+tzlocal
 
 # # Optional dependencies
 # boto3

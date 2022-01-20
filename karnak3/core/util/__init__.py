@@ -3,6 +3,7 @@ from .path import *
 from .compression import *
 from .string import *
 from .collections import *
+from .datetime import *
 
 import karnak3.core.log as kl
 
