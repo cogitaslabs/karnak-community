@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from abc import abstractmethod
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Union, Any, Generator
 import datetime
 import time
 import pandas as pd
@@ -9,9 +9,11 @@ import threading
 import copy
 import orjson
 import pytz
+import gc
 
 import karnak3.core.util as ku
 import karnak3.core.log as kl
+import karnak3.core.profiling as kp
 
 
 def json_serial(obj):  # FIXME move to somewhere else, or use orjson
@@ -367,6 +369,104 @@ class KarnakFetcher:
         flat_data = [x.flat_dict() for x in fetched_data]
         return pd.DataFrame(flat_data)
 
+    @abstractmethod
+    def save_consolidation(self, prepared_df: pd.DataFrame, table: str,
+                           time_slice_id: str, time_slice_ref: Any,
+                           current_file: int, n_files: int, **args):
+        pass
+
+    @abstractmethod
+    def prepare_row(self, result_row: pd.Series, decoded_item: dict) -> dict:
+        pass
+
+    def time_slice_ref(self, df: pd.DataFrame) -> Any:
+        """Identifier for time slice. by default, the latest timestamp"""
+        return pd.to_datetime(df['capture_ts'].max())
+
+    def time_slicing(self, df: pd.DataFrame) -> Generator[(pd.DataFrame, str, Any)]:
+        """Generator for time slicing. default is by capture date.
+
+        Returns the dataframe slice, a string identifier, and an arbitrary object that
+            will be used by save function
+        """
+        dt_series = df['capture_ts'].str.slice(stop=10)
+        dt_set = dt_series.unique()
+        for dt_str in dt_set:
+            dt_slice = df[dt_series == dt_str]
+            slice_obj = self.time_slice_ref(dt_slice)
+            yield dt_slice, dt_str, slice_obj
+
+    def rows_slicing(self, df: pd.DataFrame, max_rows_per_file: int) \
+            -> Generator[(pd.DataFrame, int, int)]:
+        n_rows = df['rows'].sum()
+        n_files = -(-n_rows // max_rows_per_file)  # rounds up
+        rows_accumulator = []
+        file_count = 0
+        kl.debug(f'slicing {n_rows} rows from {len(df)} items into {n_files} files...')
+
+        def file_slice() -> pd.DataFrame:
+            nonlocal file_count, rows_accumulator
+            file_count += 1
+            next_slice_data = rows_accumulator[:max_rows_per_file]
+            f_slice = pd.DataFrame(next_slice_data)
+            rows_accumulator = rows_accumulator[max_rows_per_file:]
+            return f_slice
+
+        for index, result_row in df.iterrows():
+            decoded_data_str = ku.decompress_str_base64(result_row['data'],
+                                                        result_row['compression'])
+            decoded_data_list = orjson.loads(decoded_data_str) if decoded_data_str is not None \
+                else []
+            data_rows = [self.prepare_row(result_row, decoded_item)
+                         for decoded_item in decoded_data_list]
+            rows_accumulator.extend(data_rows)
+            while len(rows_accumulator) >= max_rows_per_file:
+                yield file_slice(), file_count, n_files
+
+        while len(rows_accumulator) > 0:
+            yield file_slice(), file_count, n_files
+
+    def custom_max_rows_per_file(self, table: str) -> Optional[int]:
+        return None
+
+    def _effective_max_rows_per_file(self, table: str, max_rows_per_file: int) -> int:
+        custom_mrpf = self.custom_max_rows_per_file(table)
+        effective_mrpf = max_rows_per_file
+        if custom_mrpf:
+            effective_mrpf = min(custom_mrpf, max_rows_per_file)
+            kl.trace(f'effective max_rows_per_file for table {table}: {effective_mrpf}')
+        return effective_mrpf
+
+    def prepare_consolidation(self, fetched_df: pd.DataFrame, max_rows_per_file: int, **args):
+        if fetched_df is None or len(fetched_df) == 0:
+            kl.info('empty dataframe, nothing to save.')
+
+        kl.info(f'saving consolidated data for {len(fetched_df)} rows...')
+        kprof = kp.KProfiler()
+        kprof.log_mem('memory usage')
+
+        # slice by table
+        tables = set(fetched_df['table'].unique())
+        for table in tables:
+            _max_rows_per_file = self._effective_max_rows_per_file(table, max_rows_per_file)
+            table_slice = fetched_df.loc[fetched_df['table'] == table]
+            kl.debug(f'preparing data for table {table} ({len(table_slice)} items)...')
+
+            # slice by time
+            for (time_slice_df, time_slice_id, time_slice_ref) in self.time_slicing(table_slice):
+
+                # slice into files and prepare dataframe
+                for (prepared_file_df, current_file, n_files) \
+                        in self.rows_slicing(time_slice_df, _max_rows_per_file):
+
+                    self.save_consolidation(prepared_file_df, table, time_slice_id=time_slice_id,
+                                            time_slice_ref=time_slice_ref,
+                                            current_file=current_file, n_files=n_files, **args)
+                    kprof.log_mem('memory usage before gc')
+                    del prepared_file_df
+                    gc.collect()
+                    kprof.log_mem('memory usage after gc')
+
 
 class KarnakFetcherWorker:
     def __init__(self, fetcher: KarnakFetcher, extractor: str, n_threads: int = 1,
@@ -442,7 +542,8 @@ class KarnakFetcherWorker:
         if result.is_success:
             # successful ones: move to results
             self.complete_queue_item(result, thread_context)
-            kl.debug(f"success fetching {result.queue_item.keys} in {result.elapsed_str()}, "
+            kl.debug(f"success fetching {result.queue_item.table} keys "
+                     f" {result.queue_item.keys} in {result.elapsed_str()}, "
                      f"attempt {result.queue_item.current_retries}")
         else:  # failure
             action, new_extractor = self.decide_failure_action(result)
