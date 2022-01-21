@@ -5,8 +5,9 @@ from datetime import timedelta
 import re
 from typing import Optional, Union, List
 
-import pytz
 import dateutil.parser
+import tzlocal
+import pytz
 
 from karnak3.core.util import is_list_like
 
@@ -126,24 +127,24 @@ class TimeDeltaType(object):
                                   microseconds=td.microseconds * mult)
 
 
-# default_tz = None
-# 
-# 
-# def set_default_tz(tz=None):
-#     global default_tz
-#     if tz is None:
-#         default_tz = tzlocal.get_localzone()
-#     else:
-#         default_tz = tz
+default_tz = pytz.utc
 
 
-def kts(year, month, day, hour=0, minute=0, second=0, microsecond=0, tz=None):
-    # timezone aware timestamp
-    dt = datetime.datetime(year, month, day, hour, minute, second, microsecond)
-    if tz is not None:
-        return tz.localize(dt)
+def set_default_tz(tz=None, local=True):
+    global default_tz
+    if local:
+        default_tz = tzlocal.get_localzone()
+    elif tz is not None:
+        default_tz = tz
     else:
-        return dt
+        default_tz = pytz.utc
+
+
+def kts(year, month, day, hour=0, minute=0, second=0, microsecond=0, tz=default_tz) \
+        -> datetime.datetime:
+    # timezone aware timestamp
+    ts = datetime.datetime(year, month, day, hour, minute, second, microsecond, tzinfo=tz)
+    return ts
 
 
 def is_tz_aware(ts):
@@ -151,8 +152,12 @@ def is_tz_aware(ts):
     return ts.tzinfo is not None and ts.tzinfo.utcoffset(ts) is not None
 
 
-def to_tz_aware(ts: Union[kdatelike, List[kdatelike]], tz=pytz.utc) \
+def to_tz_aware(ts: Union[kdatelike, List[kdatelike]], tz=default_tz) \
         -> Union[kdatetime, List[kdatetime], None]:
+    if tz is None:
+        if default_tz is None:
+            set_default_tz()
+        tz = default_tz
 
     if is_list_like(ts):
         return [to_tz_aware(t) for t in ts]
@@ -167,14 +172,14 @@ def to_tz_aware(ts: Union[kdatelike, List[kdatelike]], tz=pytz.utc) \
     if is_tz_aware(_ts):
         return _ts
     else:
-        return tz.localize(_ts)
+        return _ts.replace(tzinfo=tz)
 
 
-def ts_to_end_of_day(dt: datetime.datetime):
+def ts_to_end_of_day(ts: datetime.datetime):
     t = datetime.time.max
-    return kts(dt.year, dt.month, dt.day,
-               t.hour. t.minute, t.second, t.microsecond,
-               tz=dt.tzinfo)
+    return kdatetime(ts.year, ts.month, ts.day,
+                     t.hour.t.minute, t.second, t.microsecond,
+                     tzinfo=ts.tzinfo)
 
 
 def ts_to_dt_end_of_day(ts: kdatelike) -> kdate:
@@ -238,12 +243,14 @@ def parse_filename_date(filename) -> Optional[datetime.date]:
     match = re.search(r'\d{8}', filename)
     if match:
         dt_str = match.group(0)
-        return datetime.datetime.strptime(dt_str, '%Y%m%d')
+        ts = datetime.datetime.strptime(dt_str, '%Y%m%d')
+        dt = ts_to_dt(ts)
+        return dt
     else:
         return None
 
 
-def parse_filename_timestamp(filename, tz=None) -> Optional[datetime.datetime]:
+def parse_filename_datetime(filename, tz=default_tz) -> Optional[datetime.datetime]:
     match_expressions = [r'\d{8}[-:\s]?\d{6}', r'\d{8}']
     for exp in match_expressions:
         match = re.search(exp, filename)

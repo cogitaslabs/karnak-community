@@ -4,8 +4,10 @@ import datetime
 import dateutil.parser
 import pytz
 import os
+import copy
 
 import karnak3.core.util as ku
+import karnak3.core.log as kl
 import karnak3.core.time_window as ktw
 from karnak3.core.util.datetime import kdatelike
 
@@ -23,6 +25,7 @@ def best_arg(arg_name: str, args: Optional[Dict[str, str]] = None,
     if arg_value is None:
         arg_value = default
     return arg_value
+
 
 def parse_date(date_str):
     try:
@@ -59,13 +62,45 @@ def parse_file_path(path):
         raise argparse.ArgumentTypeError(f"{path} is not a valid file")
 
 
+def test_argument_added(parser: argparse.ArgumentParser, argument_name: str) -> bool:
+    second_parser = copy.deepcopy(parser)
+    try:
+        second_parser.add_argument(argument_name)
+        return False
+    except Exception as e:
+        return True
+
+
+#
+# core parameters
+#
+
+def add_core_params(parser: argparse.ArgumentParser):
+    parser.add_argument('--verbosity', '-v', type=int, default=2,
+                        help='log verbosity: 0 is less verbose, 5 is more verbose')
+    parser.add_argument('--timezone', '-z', help='default timezone for semantic timestamp',
+                        type=parse_timezone, default=None)
+
+
+def parse_handle_core_params(parser: argparse.ArgumentParser, arguments):
+    # KarnakConfig.module_name = module_name
+    args = parser.parse_args(arguments)
+
+    kl.set_level(args.verbosity)
+    if args.timezone is not None:
+        ku.set_default_tz(args.timezone)
+
+
 #
 # time windows
 #
 
-def add_window_params(parser: argparse.ArgumentParser,
-                      time_type: str = 'timestamp') -> argparse.ArgumentParser:
+def add_window_params(parser: argparse.ArgumentParser, time_type: str = 'timestamp'):
     assert time_type in ['date', 'timestamp']
+
+    if not test_argument_added(parser, '--timezone'):
+        add_core_params(parser)
+
     time_parser = parse_timestamp if time_type == 'timestamp' else parse_date
 
     if time_type == 'date':
@@ -88,10 +123,6 @@ def add_window_params(parser: argparse.ArgumentParser,
                              'or period is not daily.')
     parser.add_argument('--year', help='shortcut to download all entries for a chosen year.',
                         type=int)
-
-    # TODO: add tz parameter if not yet added
-
-    return parser
 
 
 def parse_window_slices(parsed_args,

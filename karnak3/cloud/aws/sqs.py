@@ -97,10 +97,12 @@ def receive_messages(queue_name: str,
         if result.get('Messages'):
             new_results = {m['ReceiptHandle']: m['Body'] for m in result['Messages']}
             result_messages.update(new_results)
-            _logger.trace(f'sqs: {len(new_results)} messages read from {queue_name}')
+            # _logger.trace(f'sqs: {len(new_results)} messages read from {queue_name}')
         else:
-            _logger.trace(f'sqs: 0 messages read from {queue_name}')
+            # _logger.trace(f'sqs: 0 messages read from {queue_name}')
             break
+
+    _logger.trace(f'sqs: {len(result_messages)} messages read from {queue_name}')
     return result_messages
 
 

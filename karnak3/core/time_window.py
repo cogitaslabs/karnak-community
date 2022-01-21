@@ -1,6 +1,5 @@
 from typing import Union, Optional, Tuple, List
 
-import pytz
 from datetime import timedelta
 
 import karnak3.core.util as ku
@@ -10,14 +9,14 @@ from karnak3.core.util import kdatetime, kdate, kdatelike
 valid_slicing_frequency = ['hour', 'day', 'month', 'year',
                            '30min', '20min', '15min', '10min', '5min', 'minute']
 
-valid_overlapping_frequency = ['ad-hoc', 'hourly', 'daily', 'none']
+valid_latest_frequency = ['mtd', 'ytd', 'full', 'latest']
+
+valid_overlapping_frequency = ['adhoc', 'hourly', 'daily', 'none'] + valid_latest_frequency
 
 valid_frequency = valid_slicing_frequency + valid_overlapping_frequency
 
-valid_latest_data = ['mtd', 'ytd', 'full', 'latest']
-
 valid_auto_window_basic = ['full', 'last-year', 'ytd', 'last-month', 'mtd', 'yesterday', 'today',
-                           'filename']
+                           'latest', 'filename']
 
 # valid_auto_window_bookmark = ['bookmark', 'leftover']
 
@@ -30,7 +29,7 @@ valid_auto_window = valid_auto_window_basic # + valid_auto_window_bookmark
 
 
 def decode_auto_window(auto_window: str,
-                       tz=pytz.utc,
+                       tz=ku.default_tz,
                        days: Optional[int] = None,
                        filename: Optional[str] = None) \
         -> Tuple[Optional[kdatetime], Optional[kdatetime]]:
@@ -69,17 +68,17 @@ def decode_auto_window(auto_window: str,
         start_date = ku.kts(current_year, current_month, 1, tz=tz)
         end_date = today
     elif auto_window in ['yesterday', 'today']:
+        _days = 1 if days is None else days
         if auto_window == 'today':
             end_date = tomorrow
         elif auto_window == 'yesterday':
             end_date = today
         else:
             assert False
-        _days = 1 if days is None else days
         start_date = end_date - timedelta(days=_days)
     elif auto_window == 'filename' and filename is not None:
-        filename_ts = ku.parse_filename_timestamp(filename, tz)
-        return filename_ts, None
+        filename_ts = ku.parse_filename_datetime(filename, tz)
+        return filename_ts, filename_ts
     else:
         assert False
 
@@ -91,7 +90,7 @@ def slice_time_window(window_start: Optional[kdatelike] = None,
                       weekdays: Optional[List[str]] = None,
                       last_weekday: Optional[str] = None,
                       frequency: Optional[str] = None,
-                      tz=pytz.utc,
+                      tz=ku.default_tz,
                       time_type: str = 'datetime') \
         -> List[Tuple[kdatelike, kdatelike]]:
 
@@ -124,6 +123,12 @@ def slice_time_window(window_start: Optional[kdatelike] = None,
         # empty window. in this case, both limits should be None
         return []
 
+    # overlapping frequencies do not get sliced
+    if frequency in valid_overlapping_frequency or frequency is None:
+        # or auto_window == 'leftover':
+        return format_result([(w_start, w_end)])
+
+    # window start and window end must be both defined or both undefined
     assert w_start is not None and w_end is not None
 
     w_end_adj = w_end - timedelta(milliseconds=1)
@@ -132,14 +137,6 @@ def slice_time_window(window_start: Optional[kdatelike] = None,
         # start > end
         return []
 
-    # window start and window end must be both defined or both undefined
-
-    # overlapping frequencies have a single window
-    if frequency in valid_overlapping_frequency or frequency is None:
-        # or auto_window == 'leftover':
-        return format_result([(w_start, w_end)])
-
-    # non-overlapping frequencies start here
     elif frequency == 'year':
         # always whole years, from first to last day
         first = w_start.year
@@ -229,7 +226,7 @@ def decode_time_window_limits(window_start: Optional[kdatelike] = None,
                               # last_weekday: Optional[str] = None,
                               filename: Optional[str] = None,
                               frequency: Optional[str] = None,
-                              tz=pytz.utc,
+                              tz=ku.default_tz,
                               time_type: str = 'datetime') \
         -> Union[Tuple[kdatetime, kdatetime],
                  Tuple[kdate, kdate]]:
@@ -286,7 +283,7 @@ def decode_time_window_slices(window_start: Optional[kdatelike] = None,
                               last_weekday: Optional[str] = None,
                               filename: Optional[str] = None,
                               frequency: Optional[str] = None,
-                              tz=pytz.utc,
+                              tz=ku.default_tz,
                               time_type: str = 'datetime') \
         -> List[Tuple[kdatelike, kdatelike]]:
     ok = validate_time_window(window_start=window_start,
@@ -325,6 +322,10 @@ def time_window_slices_start(slices: List[Tuple[kdatelike, kdatelike]]) -> List[
     return [ts for (ts, te) in slices]
 
 
+def time_window_slices_end(slices: List[Tuple[kdatelike, kdatelike]]) -> List[kdatelike]:
+    return [te for (ts, te) in slices]
+
+
 def validate_time_window(window_start: Optional[kdatelike] = None,
                          window_end: Optional[kdatelike] = None,
                          window_date: Optional[kdate] = None,
@@ -334,10 +335,15 @@ def validate_time_window(window_start: Optional[kdatelike] = None,
                          weekdays: Optional[List[str]] = None,
                          last_weekday: Optional[str] = None,
                          filename: Optional[str] = None,
-                         frequency: Optional[str] = None
+                         frequency: Optional[str] = None,
+                         time_type='datetime'
                          ) -> Tuple[bool, str]:
     # is window_end is not given, assumes if needed current timestamp or current date
     #   according to time_type
+
+    assert time_type in ['date', 'datetime', None]
+    assert frequency is None or frequency in valid_frequency
+    assert auto_window is None or auto_window in valid_auto_window
 
     if window_start is not None and window_end is not None:
         if auto_window or days or year or window_date:
@@ -390,8 +396,19 @@ def validate_time_window(window_start: Optional[kdatelike] = None,
     if auto_window == 'filename':
         if ku.str_empty(filename):
             return False, f"'filename' auto-window 'filename' must be used together"
+        if frequency in valid_slicing_frequency:
+            return False, f"'filename' auto-windows cannot be sliced"
 
-    # TODO validate frequency and auto-window values
+    if (auto_window in ['mtd', 'last_month', 'yesterday', 'today']
+                and frequency in [None, 'year', 'yearly']) \
+            or (auto_window in ['yesterday', 'today'] and frequency in ['month', 'monthly']):
+        # TODO there are more incompatible combinations
+        return False, f"incompatible auto_window {auto_window} with frequency '{frequency}'"
+
+    if time_type == 'date' and (frequency not in ['day', 'month', 'year']
+                                and frequency in valid_slicing_frequency) \
+            or frequency == 'monthly':
+        return False, f"invalid frequency for date"
 
     if not any([window_start, window_end, auto_window, window_date, year]):
         return False, "no window criteria defined"

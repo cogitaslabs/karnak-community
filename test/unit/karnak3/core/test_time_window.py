@@ -175,13 +175,24 @@ class TestTimeWindow(unittest.TestCase):
         # filename
         tx = ktw.decode_time_window_slices(auto_window='filename', time_type='date',
                                            filename='xpto-file-20220102-ypt.xxx')
-        self.assertEqual([(dt1_2, dt1_3)], tx)
+        self.assertEqual([(dt1_2, dt1_2)], tx)
+
+        tx = ktw.decode_time_window_slices(auto_window='filename', time_type='datetime',
+                                           filename='xpto-file-20220101:120000-ypt.xxx')
+        self.assertEqual([(ts1b, ts1b)], tx)
 
         #
         # test frequency
         #
 
-        # TODO: hour
+        # hour
+        tx = ktw.decode_time_window_slices(auto_window='yesterday', time_type='datetime',
+                                           frequency='hour')
+        self.assertEqual([(yesterday_ts, yesterday_ts + timedelta(hours=1)),
+                          (yesterday_ts + timedelta(hours=1), yesterday_ts + timedelta(hours=2))],
+                         tx[:2])
+        self.assertEqual([(today_ts - timedelta(hours=2), today_ts - timedelta(hours=1)),
+                          (today_ts - timedelta(hours=1), today_ts)], tx[-2:])
 
         # TODO: day
 
@@ -194,3 +205,5 @@ class TestTimeWindow(unittest.TestCase):
         # TODO: 15 min
 
         # TODO: minute
+
+

@@ -23,7 +23,7 @@ def requirements():
 
 setuptools.setup(
     name="karnak",
-    version="3.0.2",
+    version="3.0.3",
     author="Leonardo Rossi",
     author_email="leorossi@cogitaslabs.com",
     description="Karnak Data Platform Community Edition",
