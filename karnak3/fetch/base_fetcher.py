@@ -184,7 +184,9 @@ class FetcherResult:
 
 
 class KarnakFetcherThreadContext:
-    pass
+    def __init__(self, context_vars: dict = None):
+        # general context dict for those who do not wish to create a subclass
+        self.context_vars: dict =  context_vars if context_vars is not None else {}
 
 
 class KarnakFetcher:

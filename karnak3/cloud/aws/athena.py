@@ -1,5 +1,4 @@
-import contextlib
-
+import os
 import pandas as pd
 import pyathena
 import pyathena.pandas.util
@@ -9,11 +8,11 @@ import pyathenajdbc.util
 from typing import Optional, Dict, Any, Union
 
 import karnak.util.log as klog
-import karnak3.core.db as kdb
 from karnak3.core.db import KSqlAlchemyEngine
 import karnak3.core.arg as karg
 import karnak3.cloud.aws as kaws
 import karnak3.core.util as ku
+from karnak3.core.config import coalesce_config
 
 # _paramstyle = 'numeric'
 
@@ -24,10 +23,10 @@ class AthenaConfig:
                  workgroup: Optional[str] = None,
                  output_location: Optional[str] = None):
 
-        self.default_database = default_database
-        self.region = region
-        self.workgroup = workgroup
-        self.output_location = output_location
+        self.region = ku.coalesce(region, kaws.aws_default_region())
+        self.default_database = coalesce_config(default_database, 'ATHENA_DEFAULT_DATABASE')
+        self.workgroup = coalesce_config(workgroup, 'ATHENA_WORKGROUP')
+        self.output_location = coalesce_config(output_location, 'ATHENA_OUTPUT_LOCATION')
         super().__init__()
 
 

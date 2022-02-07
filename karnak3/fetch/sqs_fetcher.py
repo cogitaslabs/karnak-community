@@ -8,9 +8,9 @@ from karnak3.fetch.base_fetcher import *
 
 
 class KarnakSqsFetcherThreadContext(KarnakFetcherThreadContext):
-    def __init__(self):
+    def __init__(self, context_vars: dict = None):
         self.sqs_client = ksqs.get_client()
-        super().__init__()
+        super().__init__(context_vars=context_vars)
 
 
 class KarnakSqsFetcher(KarnakFetcher):
