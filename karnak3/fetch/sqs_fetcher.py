@@ -194,18 +194,21 @@ class KarnakSqsFetcher(KarnakFetcher):
 
             self.prepare_consolidation(fetched_df, max_rows_per_file=max_rows_per_file, **args)
             del fetched_df
-            gc.collect()
+            # gc.collect()
 
-            handles = [i.handle for i in results]
-            ksqs.remove_messages(queue_name=self.results_queue_name(), receipt_handles=handles)
+            # handles = [i.handle for i in results]
+            # kl.debug(f'removing {len(handles)} messages from results queue...')
+            # ksqs.remove_messages(queue_name=self.results_queue_name(), receipt_handles=handles)
 
             del results
             gc.collect()
 
         kl.debug(f'consolidate {self.name}: finish.')
 
-
-
+    def clean_slice_consolidation(self, prepared_file_df: str, table: str):
+        handles = list(prepared_file_df['handle'].unique())
+        kl.debug(f'removing {len(handles)} messages from results queue...')
+        ksqs.remove_messages(queue_name=self.results_queue_name(), receipt_handles=handles)
 
 
 class KarnakSqsFetcherWorker(KarnakFetcherWorker, ABC):

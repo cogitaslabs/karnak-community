@@ -140,11 +140,14 @@ class FetcherResult:
     def elapsed_str(self):
         return str(self.elapsed)
 
-    def flat_dict(self) -> dict:
+    def flat_dict(self, include_handle: bool = False) -> dict:
         flat_dict = self.__dict__.copy()
         if self.queue_item is not None:
             flat_dict.update(self.queue_item.__dict__)
-        del flat_dict['handle']
+        if not include_handle:
+            del flat_dict['handle']
+        else:
+            flat_dict['handle'] = self.handle
         del flat_dict['queue_item']
         return flat_dict
 
@@ -368,7 +371,7 @@ class KarnakFetcher:
         pass
 
     def results_df(self, fetched_data: List[FetcherResult]) -> pd.DataFrame:
-        flat_data = [x.flat_dict() for x in fetched_data]
+        flat_data = [x.flat_dict(include_handle=True) for x in fetched_data]
         return pd.DataFrame(flat_data)
 
     @abstractmethod
@@ -464,10 +467,16 @@ class KarnakFetcher:
                     self.save_consolidation(prepared_file_df, table, time_slice_id=time_slice_id,
                                             time_slice_ref=time_slice_ref,
                                             current_file=current_file, n_files=n_files, **args)
+                    self.clean_slice_consolidation(prepared_file_df, table)
+
                     kprof.log_mem('memory usage before gc')
                     del prepared_file_df
                     gc.collect()
                     kprof.log_mem('memory usage after gc')
+
+    @abstractmethod
+    def clean_slice_consolidation(self, prepared_file_df: str, table: str):
+        pass
 
 
 class KarnakFetcherWorker:
