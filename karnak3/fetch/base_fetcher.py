@@ -381,7 +381,7 @@ class KarnakFetcher:
         pass
 
     @abstractmethod
-    def prepare_row(self, result_row: pd.Series, decoded_item: dict) -> dict:
+    def prepare_row(self, result_row: pd.Series, decoded_item: dict) -> Optional[dict]:
         pass
 
     def time_slice_ref(self, df: pd.DataFrame) -> Any:
@@ -424,6 +424,7 @@ class KarnakFetcher:
                 else []
             data_rows = [self.prepare_row(result_row, decoded_item)
                          for decoded_item in decoded_data_list]
+            data_rows = [i for i in data_rows if i is not None]  # remove failed rows
             rows_accumulator.extend(data_rows)
             while len(rows_accumulator) >= max_rows_per_file:
                 yield file_slice(), file_count, n_files
@@ -464,6 +465,8 @@ class KarnakFetcher:
                 for (prepared_file_df, current_file, n_files) \
                         in self.rows_slicing(time_slice_df, _max_rows_per_file):
 
+                    if len(prepared_file_df) == 0:
+                        kl.warn('saving file with 0 valid rows')
                     self.save_consolidation(prepared_file_df, table, time_slice_id=time_slice_id,
                                             time_slice_ref=time_slice_ref,
                                             current_file=current_file, n_files=n_files, **args)
