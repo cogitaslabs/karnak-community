@@ -25,6 +25,10 @@ class KarnakSqsFetcher(KarnakFetcher):
         self.default_sqs_client = ksqs.get_client()
         self.empty_work_queue_recheck_seconds = empty_work_queue_recheck_seconds
 
+        # helper series counters for consolidation
+        self.table_consolidation_full_handle_cnt: Optional[pd.Series] = None
+        self.table_consolidation_processed_handle_cnt: Optional[pd.Series] = None
+
     #
     # queues
     #
@@ -205,10 +209,27 @@ class KarnakSqsFetcher(KarnakFetcher):
 
         kl.debug(f'consolidate {self.name}: finish.')
 
-    def clean_slice_consolidation(self, prepared_file_df: str, table: str):
-        handles = list(prepared_file_df['handle'].unique())
+    def prepare_table_consolidation(self, table_slice_df: pd.DataFrame):
+        self.table_consolidation_full_handle_cnt = table_slice_df[['handle', 'rows']]\
+            .groupby('handle').sum('rows')['rows']
+        self.table_consolidation_processed_handle_cnt = self.table_consolidation_full_handle_cnt.copy()
+        self.table_consolidation_processed_handle_cnt[:] = 0
+
+    def clean_slice_consolidation(self, prepared_file_df: pd.DataFrame, table: str):
+        # count handles processed and find those fullt processed to remove
+        slice_handle_cnt = prepared_file_df['handle'].value_counts()
+        table_handle_cnt_new = \
+            self.table_consolidation_processed_handle_cnt.add(slice_handle_cnt, fill_value=0)
+        table_handle_cnt_missing = \
+            self.table_consolidation_full_handle_cnt.sub(table_handle_cnt_new)
+        handles_fulfilled = table_handle_cnt_missing[table_handle_cnt_missing == 0]
+        handles_to_remove = handles_fulfilled.index.intersection(slice_handle_cnt.index)
+        handles = list(handles_to_remove)
+
+        # handles = list(prepared_file_df['handle'].unique())
         kl.debug(f'removing {len(handles)} messages from results queue...')
         ksqs.remove_messages(queue_name=self.results_queue_name(), receipt_handles=handles)
+        self.table_consolidation_processed_handle_cnt = table_handle_cnt_new
 
 
 class KarnakSqsFetcherWorker(KarnakFetcherWorker, ABC):

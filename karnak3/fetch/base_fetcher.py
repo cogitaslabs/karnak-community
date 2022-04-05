@@ -457,6 +457,7 @@ class KarnakFetcher:
             _max_rows_per_file = self._effective_max_rows_per_file(table, max_rows_per_file)
             table_slice = fetched_df.loc[fetched_df['table'] == table]
             kl.debug(f'preparing data for table {table} ({len(table_slice)} items)...')
+            self.prepare_table_consolidation(table_slice)
 
             # slice by time
             for (time_slice_df, time_slice_id, time_slice_ref) in self.time_slicing(table_slice):
@@ -465,6 +466,10 @@ class KarnakFetcher:
                 for (prepared_file_df, current_file, n_files) \
                         in self.rows_slicing(time_slice_df, _max_rows_per_file):
 
+                    n_rows = len(prepared_file_df)
+                    n_items = len(prepared_file_df['handle'].unique())
+                    kl.debug(f"prepared slice #{current_file} from table {table} with {n_rows} rows from "
+                             f"{n_items} items")
                     if len(prepared_file_df) == 0:
                         kl.warn('saving file with 0 valid rows')
                     self.save_consolidation(prepared_file_df, table, time_slice_id=time_slice_id,
@@ -477,8 +482,11 @@ class KarnakFetcher:
                     gc.collect()
                     kprof.log_mem('memory usage after gc')
 
+    def prepare_table_consolidation(self, table_slice_df: pd.DataFrame) -> Any:
+        pass
+
     @abstractmethod
-    def clean_slice_consolidation(self, prepared_file_df: str, table: str):
+    def clean_slice_consolidation(self, prepared_file_df: pd.DataFrame, table: str):
         pass
 
 
