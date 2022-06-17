@@ -182,13 +182,18 @@ class KSqlAlchemyEngine:
                                            out_style=self.paramstyle_driver)
         return _sql, _params
 
+    def _cursor_execute(self, cursor,
+                        sql: str,
+                        params: Union[dict, list, None] = None):
+        return cursor.execute(sql, params)
+
     def select_pa(self, sql: str,
                   params: Union[dict, list, None] = None,
                   paramstyle: str = None) -> pa.Table:
         _sql, _params = self._convert_sql(sql=sql, params=params, paramstyle=paramstyle)
         with contextlib.closing(self._connection()) as conn:
             with conn.cursor() as cursor:
-                result = cursor.execute(_sql, _params)
+                result = self._cursor_execute(cursor, _sql, _params)
                 result = self._result_pa(cursor, result)
                 return result
 
@@ -198,7 +203,7 @@ class KSqlAlchemyEngine:
         _sql, _params = self._convert_sql(sql=sql, params=params, paramstyle=paramstyle)
         with contextlib.closing(self._connection()) as conn:
             with conn.cursor() as cursor:
-                result = cursor.execute(_sql, _params)
+                result = self._cursor_execute(cursor, _sql, _params)
                 # self.test_libs_compatibility()
                 result = self._result_pd(cursor, result)
                 # self.test_libs()
@@ -210,7 +215,7 @@ class KSqlAlchemyEngine:
         _sql, _params = self._convert_sql(sql=sql, params=params, paramstyle=paramstyle)
         with contextlib.closing(self._connection()) as conn:
             with conn.cursor() as cursor:
-                result = cursor.execute(_sql, _params)
+                result = self._cursor_execute(cursor, _sql, _params)
                 wrapped_future = self._result_pa_async(cursor, result)
                 return wrapped_future
 
@@ -220,6 +225,6 @@ class KSqlAlchemyEngine:
         _sql, _params = self._convert_sql(sql=sql, params=params, paramstyle=paramstyle)
         with contextlib.closing(self._connection()) as conn:
             with conn.cursor() as cursor:
-                result = cursor.execute(_sql, _params)
+                result = self._cursor_execute(cursor, _sql, _params)
                 wrapped_future = self._result_pd_async(cursor, result)
                 return wrapped_future

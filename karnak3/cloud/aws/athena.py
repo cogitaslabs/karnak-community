@@ -134,7 +134,13 @@ class AthenaEngine(KSqlAlchemyEngine):
             result_msg = f'query returned empty data structure'
 
         if self.mode != 'jdbc':
-            result_msg += f', data scanned ({self.mode}): ' \
+            mode_detail_str = f'{self.mode}'
+            if self.async_enabled:
+                mode_detail_str += ' async'
+            if self.unload:
+                mode_detail_str += ' unload'
+
+            result_msg += f', data scanned ({mode_detail_str}): ' \
                           f'{_result.data_scanned_in_bytes / (1024 * 1024.0):.2f}' \
                           f' MB, total query time ' \
                           f'{_result.total_execution_time_in_millis / 1000.0:.3f}s'
@@ -196,6 +202,16 @@ class AthenaEngine(KSqlAlchemyEngine):
         # noinspection PyTypeChecker
         wrapped_future: KArrowTableFuture = self._result_pd_async(cursor, result)
         return wrapped_future
+
+    def _cursor_execute(self, cursor,
+                        sql: str,
+                        params: Union[dict, list, None] = None):
+        # workaround for null in float and double types
+        if self.async_enabled and not self.unload and self.mode == 'pandas':
+            # https://github.com/laughingman7743/PyAthena/issues/204
+            return cursor.execute(sql, params, na_values=[''])
+        else:
+            return super()._cursor_execute(cursor, sql, params)
 
 
 def get_runtime_config(args: Optional[Dict[str, str]] = None):

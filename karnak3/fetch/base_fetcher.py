@@ -493,14 +493,45 @@ class KarnakFetcher:
 class KarnakFetcherWorker:
     def __init__(self, fetcher: KarnakFetcher, extractor: str, n_threads: int = 1,
                  retries: int = 1,
-                 loop_pause_seconds: int = 180):
+                 loop_pause_seconds: int = 180,
+                 stop_after_queue_items: Optional[int] = None,
+                 stop_after_minutes: Optional[int] = None):
         self.fetcher: KarnakFetcher = fetcher
         self.extractor = extractor
         self.n_threads = n_threads
         self.loop_pause_seconds = loop_pause_seconds
         self.retries = retries
         self.state = 'working'
+        self.stop_after_queue_items: Optional[int] = stop_after_queue_items
+        self.stop_after_minutes: Optional[int] = stop_after_minutes
+        self.processed_queue_items_cnt: int = 0
+        self.work_started_at: Optional[datetime.datetime] = None
+        self.work_stop_at: Optional[datetime.datetime] = None
         # self.state_check_lock = threading.RLock()
+
+    @ku.synchronized
+    def inc_processed_queue_items_counter(self):
+        self.processed_queue_items_cnt += 1
+
+    def set_stop_time(self):
+        if self.work_started_at is None and self.stop_after_minutes is not None:
+            self.work_started_at = datetime.datetime.now()
+            self.work_stop_at = datetime.datetime.now() \
+                                + datetime.timedelta(minutes=self.stop_after_minutes)
+
+    def should_keep_walking(self) -> bool:
+        keep_walking_items = self.processed_queue_items_cnt < self.stop_after_queue_items \
+            if self.stop_after_queue_items is not None else True
+        keep_walking_time = datetime.datetime.now() < self.work_stop_at \
+            if self.work_stop_at is not None else True
+
+        keep_walking = keep_walking_items and keep_walking_time
+        if not keep_walking_items:
+            kl.info(f'stoping worker: items counter reached {self.processed_queue_items_cnt}')
+        if not keep_walking_time:
+            kl.info(f'stoping worker: time run time reached {self.stop_after_minutes} minute(s)')
+        return keep_walking
+
 
     def throttle_request(self):
         pass
@@ -596,7 +627,7 @@ class KarnakFetcherWorker:
 
     def fetcher_thread_loop(self, thread_num: int):
         context = self.new_thread_context()
-        while self.state == 'working':
+        while self.state == 'working' and self.should_keep_walking():
             self.throttle_request()
             # self.state_check_lock.acquire()
             item = self.pop_best_work_queue_item(context=context)
@@ -606,6 +637,7 @@ class KarnakFetcherWorker:
             else:
                 kl.trace(f'thread {thread_num}: read item from queue')
                 self.process_item(item, context)
+                self.inc_processed_queue_items_counter()
         kl.trace(f'thread {thread_num}: finished')
 
     def loop_pause(self):
@@ -613,11 +645,12 @@ class KarnakFetcherWorker:
         time.sleep(self.loop_pause_seconds)
 
     def worker_loop(self):
-        while True:
+        while self.should_keep_walking():
             self.work()
             self.loop_pause()
 
     def work(self):
+        self.set_stop_time()
         self.check_worker_state()
         if self.state != 'working':
             kl.warn(f'Nothing to do: worker in state {self.state}')

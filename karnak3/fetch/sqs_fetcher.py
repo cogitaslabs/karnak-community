@@ -236,13 +236,18 @@ class KarnakSqsFetcherWorker(KarnakFetcherWorker, ABC):
 
     def __init__(self, fetcher: KarnakSqsFetcher, extractor: str, n_threads: int = 1,
                  retries: int = 1,
-                 loop_pause_seconds: int = 180):
+                 loop_pause_seconds: int = 180,
+                 stop_after_queue_items: Optional[int] = None,
+                 stop_after_minutes: Optional[int] = None
+                 ):
         self.sqs_fetcher = fetcher
         super().__init__(fetcher=fetcher,
                          extractor=extractor,
                          n_threads=n_threads,
                          retries=retries,
-                         loop_pause_seconds=loop_pause_seconds)
+                         loop_pause_seconds=loop_pause_seconds,
+                         stop_after_queue_items=stop_after_queue_items,
+                         stop_after_minutes=stop_after_minutes)
 
     def new_thread_context(self) -> KarnakSqsFetcherThreadContext:
         ctx = KarnakSqsFetcherThreadContext()
