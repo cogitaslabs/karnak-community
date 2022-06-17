@@ -104,7 +104,12 @@ class KTimer:
     def log_timer(self, message=None, end_time=None):
         if message is None:
             message = 'elapsed'
-        klog.debug('{} {}', message, self.get_elapsed_str(end_time))
+        klog.debug(f'{message} {self.get_elapsed_str(end_time)}')
+
+    def log_delta_elapsed(self, message=None, end_time=None):
+        if message is None:
+            message = 'elapsed'
+        klog.debug(f'{message} {self.get_delta_elapsed_str(end_time)}')
 
     def get_elapsed(self, end_time=None):
         if end_time is None:
@@ -147,9 +152,10 @@ class KProfiler(KTimer):
     # FIXME implement delta_only
     def _log_difference(self, usage_before: Dict[str, int], message: str = None,
                         end_time: datetime.datetime = None,
-                        level='DEBUG', cumulative: bool = False,
+                        level='DEBUG', cumulative: bool = True,
                         delta_only: bool = False):
         elapsed_str = self.get_elapsed_str(end_time)
+        delta_elapsed_str = self.get_delta_elapsed(end_time)
         mem_usage = memory_usage()
         delta_usage = delta_memory_usage(usage_before, mem_usage)
         all_usage = mem_usage.copy()
@@ -157,9 +163,10 @@ class KProfiler(KTimer):
         if delta_only:
             all_usage = {k: all_usage[k] for k in all_usage if k.startswith('delta')}
         _pretty_usage = _pretty_usage_str(all_usage)
-        _difference_str = f'elapsed: {elapsed_str} {_pretty_usage}'
+        cumulative_str = ''
         if cumulative:
-            _difference_str = 'cumulative ' + _difference_str
+            cumulative_str = f'total: {elapsed_str} '
+        _difference_str = f'delta: {delta_elapsed_str} {cumulative_str} {_pretty_usage}'
         _message = message + ': ' + _difference_str if message else _difference_str
         klog.log(level, _message)
         self.last_mem_usage = mem_usage

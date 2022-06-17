@@ -216,7 +216,7 @@ class KarnakSqsFetcher(KarnakFetcher):
         self.table_consolidation_processed_handle_cnt[:] = 0
 
     def clean_slice_consolidation(self, prepared_file_df: pd.DataFrame, table: str):
-        # count handles processed and find those fullt processed to remove
+        # count handles processed and find those fully processed to remove
         slice_handle_cnt = prepared_file_df['handle'].value_counts()
         table_handle_cnt_new = \
             self.table_consolidation_processed_handle_cnt.add(slice_handle_cnt, fill_value=0)

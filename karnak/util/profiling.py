@@ -90,7 +90,7 @@ class KProfiler(KTimer):
         if message is not None:
             msg = message + ': '
         klog.debug(f'{msg}mem avail {pretty_mem(mem_usage.available)}, '
-                   f'used {pretty_mem(mem_usage.available)}, '
+                   f'used {pretty_mem(mem_usage.used)}, '
                    f'free {pretty_mem(mem_usage.free)}, '
                    f'total {pretty_mem( mem_usage.total)}')
 

@@ -1,7 +1,8 @@
 import contextlib
 import numbers
 from abc import abstractmethod
-from typing import Union, Optional
+from concurrent.futures import Future
+from typing import Union, Optional, Tuple, Any
 import collections.abc
 import re
 import datetime
@@ -9,9 +10,10 @@ import datetime
 import sqlalchemy.pool
 import sqlparams
 import pandas as pd
+import pyarrow as pa
 
 import karnak3.core.log as kl
-
+import karnak3.core.util as ku
 
 _logger = kl.KLog(__name__)
 
@@ -70,15 +72,61 @@ def convert_paramstyle(sql, params: Union[dict, list, None],
         return converter.format(sql, params)
 
 
+class KWrappedFuture:
+    def __init__(self, future: Future, metadata: Any = None):
+        self.future = future
+        self.metadata = metadata
+
+    def result(self, timeout=None):
+        return self.future.result(timeout=timeout)
+
+    def exception(self, timeout=None):
+        return self.future.exception(timeout=timeout)
+
+    def cancel(self,):
+        return self.future.cancel()
+
+    def running(self) -> bool:
+        return self.future.running()
+
+    def done(self) -> bool:
+        return self.future.done()
+
+    def cancelled(self) -> bool:
+        return self.future.cancelled()
+
+
+class KPandasDataFrameFuture(KWrappedFuture):
+    def __init__(self, future: Future, engine: 'KSqlAlchemyEngine', metadata: str = None):
+        super().__init__(future=future)
+        self.engine = engine
+
+    @abstractmethod
+    def to_df(self, timeout=None) -> Optional[pd.DataFrame]:
+        pass
+
+
+class KArrowTableFuture(KPandasDataFrameFuture):
+    @abstractmethod
+    def to_table(self, timeout=None) -> Optional[pd.DataFrame]:
+        pass
+
+
+class KarnakDBException(ku.KarnakException):
+    pass
+
+
 class KSqlAlchemyEngine:
     def __init__(self, engine_name: str,
                  paramstyle_client: str,
-                 paramstyle_driver: str):
+                 paramstyle_driver: str,
+                 async_enabled: bool = False):
         self.engine_name = engine_name
         self.paramstyle_client = paramstyle_client
         self.paramstyle_driver = paramstyle_driver
         self.connection_pool: Optional[sqlalchemy.pool.Pool] = None
         self.set_paramstyle_client(paramstyle_client)
+        self.async_enabled: bool = async_enabled
         assert paramstyle_driver in ['qmark', 'numeric', 'named', 'format', 'pyformat']
 
     def set_paramstyle_client(self, paramstyle: str):
@@ -102,6 +150,15 @@ class KSqlAlchemyEngine:
     def _result_pd(self, cursor, result) -> Optional[pd.DataFrame]:
         pass
 
+    def _result_pa(self, cursor, result) -> Optional[pa.Table]:
+        raise ku.KarnakInternalError('method not implememented: _result_pa')
+
+    def _result_pd_async(self, cursor, result) -> KPandasDataFrameFuture:
+        raise ku.KarnakInternalError('method not implememented: _result_pd_async')
+
+    def _result_pa_async(self, cursor, result) -> KArrowTableFuture:
+        raise ku.KarnakInternalError('method not implememented: _result_pa_async')
+
     # TEST compatibility with other libs
     def test_libs_compatibility(self):
         from sklearn.preprocessing import MinMaxScaler, PowerTransformer
@@ -110,10 +167,9 @@ class KSqlAlchemyEngine:
         xpto = scaler.fit(data)
         kl.trace('****** test_libs compatibility ok ****** ')
 
-
-    def select_pd(self, sql: str,
-                  params: Union[dict, list, None] = None,
-                  paramstyle: str = None) -> pd.DataFrame:
+    def _convert_sql(self, sql: str,
+                     params: Union[dict, list, None] = None,
+                     paramstyle: str = None) -> Tuple[str, Union[dict, list, None]]:
         _paramstyle = paramstyle if paramstyle is not None else self.paramstyle_client
 
         sql_one_line = ' '.join(sql.split())
@@ -124,7 +180,22 @@ class KSqlAlchemyEngine:
         _logger.trace(f'plain query: {plain_sql}')
         _sql, _params = convert_paramstyle(sql_one_line, params, in_style=_paramstyle,
                                            out_style=self.paramstyle_driver)
+        return _sql, _params
 
+    def select_pa(self, sql: str,
+                  params: Union[dict, list, None] = None,
+                  paramstyle: str = None) -> pa.Table:
+        _sql, _params = self._convert_sql(sql=sql, params=params, paramstyle=paramstyle)
+        with contextlib.closing(self._connection()) as conn:
+            with conn.cursor() as cursor:
+                result = cursor.execute(_sql, _params)
+                result = self._result_pa(cursor, result)
+                return result
+
+    def select_pd(self, sql: str,
+                  params: Union[dict, list, None] = None,
+                  paramstyle: str = None) -> pd.DataFrame:
+        _sql, _params = self._convert_sql(sql=sql, params=params, paramstyle=paramstyle)
         with contextlib.closing(self._connection()) as conn:
             with conn.cursor() as cursor:
                 result = cursor.execute(_sql, _params)
@@ -132,3 +203,23 @@ class KSqlAlchemyEngine:
                 result = self._result_pd(cursor, result)
                 # self.test_libs()
                 return result
+
+    def select_pa_async(self, sql: str,
+                        params: Union[dict, list, None] = None,
+                        paramstyle: str = None) -> KArrowTableFuture:
+        _sql, _params = self._convert_sql(sql=sql, params=params, paramstyle=paramstyle)
+        with contextlib.closing(self._connection()) as conn:
+            with conn.cursor() as cursor:
+                result = cursor.execute(_sql, _params)
+                wrapped_future = self._result_pa_async(cursor, result)
+                return wrapped_future
+
+    def select_pd_async(self, sql: str,
+                        params: Union[dict, list, None] = None,
+                        paramstyle: str = None) -> KPandasDataFrameFuture:
+        _sql, _params = self._convert_sql(sql=sql, params=params, paramstyle=paramstyle)
+        with contextlib.closing(self._connection()) as conn:
+            with conn.cursor() as cursor:
+                result = cursor.execute(_sql, _params)
+                wrapped_future = self._result_pd_async(cursor, result)
+                return wrapped_future
