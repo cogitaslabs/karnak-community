@@ -18,6 +18,7 @@ from typing import Optional, Dict, Any, Union
 
 import karnak.util.log as klog
 from karnak3.core.db import KSqlAlchemyEngine, KPandasDataFrameFuture, KArrowTableFuture, KarnakDBException
+from karnak3.core.db import KPandasDataFrameConstantFuture  # convenience for lib users. do not remove
 import karnak3.core.arg as karg
 import karnak3.cloud.aws as kaws
 import karnak3.core.util as ku
@@ -71,7 +72,8 @@ class AthenaEngine(KSqlAlchemyEngine):
                  paramstyle: str = 'numeric',
                  mode: str = 'rest',
                  async_enabled: bool = False,
-                 unload: bool = False):
+                 unload: bool = False,
+                 async_max_workers: Optional[int] = None):
         # Modes:
         # - rest: fast rest api
         # - csv: rest with slower cursor (better formatting for some types)
@@ -83,6 +85,7 @@ class AthenaEngine(KSqlAlchemyEngine):
         self.config = config
         self.mode = mode
         self.unload = unload
+        self.async_max_workers = async_max_workers
 
     def _new_connection(self):
         config = self.config
@@ -212,6 +215,12 @@ class AthenaEngine(KSqlAlchemyEngine):
             return cursor.execute(sql, params, na_values=[''])
         else:
             return super()._cursor_execute(cursor, sql, params)
+
+    def _cursor_params(self) -> dict:
+        _params = {}
+        if self.async_max_workers:
+            _params['max_workers'] = self.async_max_workers
+        return _params
 
 
 def get_runtime_config(args: Optional[Dict[str, str]] = None):

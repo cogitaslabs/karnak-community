@@ -1,7 +1,7 @@
 import contextlib
 import numbers
 from abc import abstractmethod
-from concurrent.futures import Future
+from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Union, Optional, Tuple, Any
 import collections.abc
 import re
@@ -106,6 +106,17 @@ class KPandasDataFrameFuture(KWrappedFuture):
         pass
 
 
+class KPandasDataFrameConstantFuture(KPandasDataFrameFuture):
+    def __init__(self, df: pd.DataFrame):
+        self.df: pd.DataFrame = df
+        with ThreadPoolExecutor() as executor:
+            future = executor.submit(lambda: df)
+            super().__init__(future, None, None)
+
+    def to_df(self, timeout=None) -> Optional[pd.DataFrame]:
+        return self.df
+
+
 class KArrowTableFuture(KPandasDataFrameFuture):
     @abstractmethod
     def to_table(self, timeout=None) -> Optional[pd.DataFrame]:
@@ -114,6 +125,7 @@ class KArrowTableFuture(KPandasDataFrameFuture):
 
 class KarnakDBException(ku.KarnakException):
     pass
+
 
 
 class KSqlAlchemyEngine:
@@ -187,6 +199,9 @@ class KSqlAlchemyEngine:
                         params: Union[dict, list, None] = None):
         return cursor.execute(sql, params)
 
+    def _cursor_params(self) -> dict:
+        return {}
+
     def select_pa(self, sql: str,
                   params: Union[dict, list, None] = None,
                   paramstyle: str = None) -> pa.Table:
@@ -223,8 +238,9 @@ class KSqlAlchemyEngine:
                         params: Union[dict, list, None] = None,
                         paramstyle: str = None) -> KPandasDataFrameFuture:
         _sql, _params = self._convert_sql(sql=sql, params=params, paramstyle=paramstyle)
+        _cursor_params = self._cursor_params()
         with contextlib.closing(self._connection()) as conn:
-            with conn.cursor() as cursor:
+            with conn.cursor(**_cursor_params) as cursor:
                 result = self._cursor_execute(cursor, _sql, _params)
                 wrapped_future = self._result_pd_async(cursor, result)
                 return wrapped_future
