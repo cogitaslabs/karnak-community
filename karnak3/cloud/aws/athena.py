@@ -149,6 +149,11 @@ class AthenaEngine(KSqlAlchemyEngine):
                           f'{_result.total_execution_time_in_millis / 1000.0:.3f}s'
         klog.debug(result_msg)
 
+    def _engine_short_description(self) -> str:
+        _async_str = ' async' if self.async_enabled else ''
+        _unload_str = ' unload' if self.unload else ''
+        return f'{self.engine_name} ({self.mode}{_async_str}{_unload_str})'
+
     def _result_pa(self, cursor, result) -> Optional[pyarrow.Table]:
         if self.mode in ['arrow'] and not self.async_enabled:
             pat = result.as_arrow()

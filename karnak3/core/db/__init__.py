@@ -179,13 +179,17 @@ class KSqlAlchemyEngine:
         xpto = scaler.fit(data)
         kl.trace('****** test_libs compatibility ok ****** ')
 
+    def _engine_short_description(self) -> str:
+        return self.engine_name
+
     def _convert_sql(self, sql: str,
                      params: Union[dict, list, None] = None,
                      paramstyle: str = None) -> Tuple[str, Union[dict, list, None]]:
         _paramstyle = paramstyle if paramstyle is not None else self.paramstyle_client
 
         sql_one_line = ' '.join(sql.split())
-        _logger.trace(f'running query on {self.engine_name}, sql: {sql_one_line}, '
+        _engine_str = self._engine_short_description()
+        _logger.trace(f'running query on {_engine_str}, sql: {sql_one_line}, '
                       f'params {params}')
         plain_sql, _ = convert_paramstyle(sql_one_line, params, in_style=_paramstyle,
                                           out_style='plain')
