@@ -63,7 +63,7 @@ class KAthenaArrowTableFuture(KArrowTableFuture):
         pat = self.to_table()
         if pat is not None:
             # df = pat.to_pandas()
-            df = pat.to_pandas(self_destruct=True, split_block=True)
+            df = pat.to_pandas(self_destruct=True, split_blocks=True)
             del pat
             return df
         else:
