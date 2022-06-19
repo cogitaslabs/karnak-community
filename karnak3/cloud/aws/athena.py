@@ -60,9 +60,12 @@ class KAthenaArrowTableFuture(KArrowTableFuture):
         return pat
 
     def to_df(self, timeout=None) -> Optional[pd.DataFrame]:
-        pat = self.to_table();
+        pat = self.to_table()
         if pat is not None:
-            return pat.to_pandas()
+            # df = pat.to_pandas()
+            df = pat.to_pandas(self_destruct=True, split_block=True)
+            del pat
+            return df
         else:
             return None
 
