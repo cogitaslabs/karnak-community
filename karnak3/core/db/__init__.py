@@ -102,7 +102,7 @@ class KPandasDataFrameFuture(KWrappedFuture):
         self.engine = engine
 
     @abstractmethod
-    def to_df(self, timeout=None) -> Optional[pd.DataFrame]:
+    def to_df(self, timeout=None, save_memory: bool = False) -> Optional[pd.DataFrame]:
         pass
 
 
@@ -113,7 +113,7 @@ class KPandasDataFrameConstantFuture(KPandasDataFrameFuture):
             future = executor.submit(lambda: df)
             super().__init__(future, None, None)
 
-    def to_df(self, timeout=None) -> Optional[pd.DataFrame]:
+    def to_df(self, timeout=None, save_memory: bool = False) -> Optional[pd.DataFrame]:
         return self.df
 
 

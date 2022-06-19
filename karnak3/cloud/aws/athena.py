@@ -22,6 +22,7 @@ from karnak3.core.db import KPandasDataFrameConstantFuture  # convenience for li
 import karnak3.core.arg as karg
 import karnak3.cloud.aws as kaws
 import karnak3.core.util as ku
+import karnak3.core.log as kl
 from karnak3.core.config import coalesce_config
 
 # _paramstyle = 'numeric'
@@ -41,7 +42,7 @@ class AthenaConfig:
 
 
 class KAthenaPandasDataFrameFuture(KPandasDataFrameFuture):
-    def to_df(self, timeout=None) -> Optional[pd.DataFrame]:
+    def to_df(self, timeout=None, save_memory: bool = False) -> Optional[pd.DataFrame]:
         result_set = self.future.result(timeout)
         df = result_set.as_pandas()
         # noinspection PyTypeChecker
@@ -59,11 +60,14 @@ class KAthenaArrowTableFuture(KArrowTableFuture):
         _engine.inspect_query_execution(result_set, pat)
         return pat
 
-    def to_df(self, timeout=None) -> Optional[pd.DataFrame]:
+    def to_df(self, timeout=None, save_memory: bool = False) -> Optional[pd.DataFrame]:
         pat = self.to_table()
         if pat is not None:
             # df = pat.to_pandas()
-            df = pat.to_pandas(self_destruct=True, split_blocks=True)
+            if save_memory:
+                df = pat.to_pandas(self_destruct=True, split_blocks=True)
+            else:
+                df = pat.to_pandas()
             del pat
             return df
         else:
