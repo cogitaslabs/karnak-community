@@ -213,8 +213,9 @@ class KSqlAlchemyEngine:
         with contextlib.closing(self._connection()) as conn:
             with conn.cursor() as cursor:
                 result = self._cursor_execute(cursor, _sql, _params)
-                result = self._result_pa(cursor, result)
-                return result
+                result_pa = self._result_pa(cursor, result)
+                del result
+                return result_pa
 
     def select_pd(self, sql: str,
                   params: Union[dict, list, None] = None,
@@ -224,9 +225,10 @@ class KSqlAlchemyEngine:
             with conn.cursor() as cursor:
                 result = self._cursor_execute(cursor, _sql, _params)
                 # self.test_libs_compatibility()
-                result = self._result_pd(cursor, result)
+                result_pd = self._result_pd(cursor, result)
+                del result
                 # self.test_libs()
-                return result
+                return result_pd
 
     def select_pa_async(self, sql: str,
                         params: Union[dict, list, None] = None,
@@ -236,6 +238,7 @@ class KSqlAlchemyEngine:
             with conn.cursor() as cursor:
                 result = self._cursor_execute(cursor, _sql, _params)
                 wrapped_future = self._result_pa_async(cursor, result)
+                del result
                 return wrapped_future
 
     def select_pd_async(self, sql: str,
@@ -247,4 +250,5 @@ class KSqlAlchemyEngine:
             with conn.cursor(**_cursor_params) as cursor:
                 result = self._cursor_execute(cursor, _sql, _params)
                 wrapped_future = self._result_pd_async(cursor, result)
+                del result
                 return wrapped_future
