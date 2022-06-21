@@ -3,6 +3,7 @@ from typing import Optional, List, Dict, Any
 import boto3
 
 import karnak3.core.log as kl
+import karnak3.core.util as ku
 
 
 _client_lock = threading.RLock()
@@ -21,15 +22,15 @@ def get_client():
         return boto3.client('sqs')
 
 
+@ku.synchronized
 def get_queue_url(queue_name: str, sqs_client=None, use_cache: bool = True) -> (str, Any):
-    if sqs_client is None:
-        sqs_client = get_client()
+    _sqs_client = sqs_client if sqs_client is not None else get_client()
     queue_url = queue_cache.get(queue_name) if use_cache else None
     if queue_url is None:
-        response = sqs_client.get_queue_url(QueueName=queue_name)
+        response = _sqs_client.get_queue_url(QueueName=queue_name)
         queue_url = response['QueueUrl']
-    response = sqs_client.get_queue_url(QueueName=queue_name)
-    return queue_url, sqs_client
+        queue_cache[queue_name] = queue_url
+    return queue_url, _sqs_client
 
 
 def remove_message(queue_name: str, receipt_handle: str, sqs_client=None):

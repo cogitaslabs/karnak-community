@@ -507,6 +507,7 @@ class KarnakFetcherWorker:
         self.processed_queue_items_cnt: int = 0
         self.work_started_at: Optional[datetime.datetime] = None
         self.work_stop_at: Optional[datetime.datetime] = None
+        self.idle_counter = 0
         # self.state_check_lock = threading.RLock()
 
     @ku.synchronized
@@ -531,7 +532,6 @@ class KarnakFetcherWorker:
         if not keep_walking_time:
             kl.info(f'stoping worker: time run time reached {self.stop_after_minutes} minute(s)')
         return keep_walking
-
 
     def throttle_request(self):
         pass
@@ -617,13 +617,30 @@ class KarnakFetcherWorker:
             else:
                 assert False  # Oh, no! It can't be! All is lost!
 
-    def check_worker_state(self,) -> str:
+    def check_worker_state(self) -> str:
         fetcher_state, working_priority = self.fetcher.fetcher_state()
         if fetcher_state == 'working':
-            self.state = 'working'
+            self.set_state('working')
         else:
-            self.state = 'idle'
+            self.set_state('idle', force=True)
+            self.idle_counter = 0
         return self.state
+
+
+    @ku.synchronized
+    def reset_idle_counter(self):
+        self.idle_counter = 0
+
+    @ku.synchronized
+    def set_state(self, state: str, force: bool = False):
+        idle_threshold = 3
+        if state == 'idle':
+            self.idle_counter += 1
+            if force or self.idle_counter >= idle_threshold:
+                self.state = 'idle'
+        else:
+            self.state = state
+            self.reset_idle_counter()
 
     def fetcher_thread_loop(self, thread_num: int):
         context = self.new_thread_context()
@@ -633,11 +650,12 @@ class KarnakFetcherWorker:
             item = self.pop_best_work_queue_item(context=context)
             if item is None:
                 kl.trace(f'thread {thread_num}: no item available in queue')
-                self.state = 'idle'
+                self.set_state('idle')
             else:
                 kl.trace(f'thread {thread_num}: read item from queue')
                 self.process_item(item, context)
                 self.inc_processed_queue_items_counter()
+                self.reset_idle_counter()
         kl.trace(f'thread {thread_num}: finished')
 
     def loop_pause(self):
@@ -648,6 +666,7 @@ class KarnakFetcherWorker:
         while self.should_keep_walking():
             self.work()
             self.loop_pause()
+        kl.info('worker loop finished.')
 
     def work(self):
         self.set_stop_time()

@@ -21,7 +21,8 @@ class KarnakSqsFetcher(KarnakFetcher):
                  max_priority: Optional[int] = None,
                  empty_work_queue_recheck_seconds: int = 300):
         super().__init__(name, tables, environment, extractors, max_priority)
-        self.empty_queue_control = {}
+        self.empty_queue_control: Dict[str, datetime.datetime] = {}
+        self.empty_queue_counter: Dict[str, int] = {}
         self.default_sqs_client = ksqs.get_client()
         self.empty_work_queue_recheck_seconds = empty_work_queue_recheck_seconds
 
@@ -107,15 +108,25 @@ class KarnakSqsFetcher(KarnakFetcher):
     @synchronized
     def set_empty_queue(self, queue_name: str):
         self.empty_queue_control[queue_name] = datetime.datetime.now(tz=pytz.utc)
+        eq_counter = self.empty_queue_counter.get(queue_name, 0)
+        self.empty_queue_counter[queue_name] = eq_counter + 1
+        kl.trace(f'queue {queue_name} marked empty (counter={eq_counter + 1})')
 
     @synchronized
-    def is_empty_queue(self, queue_name: str,) -> bool:
-        eqc = self.empty_queue_control.get(queue_name)
-        if eqc is None:
+    def set_not_empty_queue(self, queue_name: str):
+        self.empty_queue_counter[queue_name] = 0
+
+    @synchronized
+    def is_empty_queue(self, queue_name: str) -> bool:
+        _counter_threshold = 4  # only after _counter_threshold attempts this funtion will return true
+        eq_counter = self.empty_queue_counter.get(queue_name, 0)
+        if eq_counter < _counter_threshold:
             return False
+        eq_time = self.empty_queue_control.get(queue_name)
+        assert eq_time is not None
         now = datetime.datetime.now(tz=pytz.utc)
-        if now - eqc >= datetime.timedelta(seconds=self.empty_work_queue_recheck_seconds):
-            del self.empty_queue_control[queue_name]
+        if now - eq_time >= datetime.timedelta(seconds=self.empty_work_queue_recheck_seconds):
+            self.set_not_empty_queue(queue_name)
             return False
         return True
 
@@ -129,10 +140,12 @@ class KarnakSqsFetcher(KarnakFetcher):
                                       wait_seconds=wait_seconds,
                                       sqs_client=sqs_client)
         if items is None or len(items) == 0:
+            # kl.trace(f'queue {queue_name} may be set as empty')
             self.set_empty_queue(queue_name)
             return None
         else:
             assert len(items) == 1
+            self.set_not_empty_queue(queue_name)
             handle = list(items.keys())[0]
             content_str = items[handle]
             ret = FetcherQueueItem.from_string(content_str, handle=handle)
