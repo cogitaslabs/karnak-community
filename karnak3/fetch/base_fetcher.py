@@ -629,6 +629,8 @@ class KarnakFetcherWorker:
 
     @ku.synchronized
     def reset_idle_counter(self):
+        if self.idle_counter != 0:
+            kl.trace(f'idle counter reset')
         self.idle_counter = 0
 
     @ku.synchronized
@@ -636,8 +638,10 @@ class KarnakFetcherWorker:
         idle_threshold = 3
         if state == 'idle':
             self.idle_counter += 1
+            kl.trace(f'idle counter: {self.idle_counter}')
             if force or self.idle_counter >= idle_threshold:
                 self.state = 'idle'
+                kl.trace(f'worker set to idle')
         else:
             self.state = state
             self.reset_idle_counter()
@@ -652,7 +656,7 @@ class KarnakFetcherWorker:
                 kl.trace(f'thread {thread_num}: no item available in queue')
                 self.set_state('idle')
             else:
-                kl.trace(f'thread {thread_num}: read item from queue')
+                kl.trace(f'thread {thread_num}: read item')
                 self.process_item(item, context)
                 self.inc_processed_queue_items_counter()
                 self.reset_idle_counter()
