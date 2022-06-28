@@ -189,11 +189,11 @@ class KSqlAlchemyEngine:
 
         sql_one_line = ' '.join(sql.split())
         _engine_str = self._engine_short_description()
-        _logger.trace(f'running query on {_engine_str}, sql: {sql_one_line}, '
+        _logger.debug(f'running query on {_engine_str}, sql: {sql_one_line}, '
                       f'params {params}')
         plain_sql, _ = convert_paramstyle(sql_one_line, params, in_style=_paramstyle,
                                           out_style='plain')
-        _logger.trace(f'plain query: {plain_sql}')
+        _logger.debug(f'plain query: {plain_sql}')
         _sql, _params = convert_paramstyle(sql_one_line, params, in_style=_paramstyle,
                                            out_style=self.paramstyle_driver)
         return _sql, _params

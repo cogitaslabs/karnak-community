@@ -152,33 +152,43 @@ class KProfiler(KTimer):
     # FIXME implement delta_only
     def _log_difference(self, usage_before: Dict[str, int], message: str = None,
                         end_time: datetime.datetime = None,
-                        level='DEBUG', cumulative: bool = True,
-                        delta_only: bool = False):
+                        level='TRACE', cumulative: bool = True,
+                        delta_only: bool = False,
+                        basic_level='DEBUG'):
+        _, should_log = klog.get_log_threshold(level)
         elapsed_str = self.get_elapsed_str(end_time)
         delta_elapsed_str = self.get_delta_elapsed(end_time)
-        mem_usage = memory_usage()
-        delta_usage = delta_memory_usage(usage_before, mem_usage)
-        all_usage = mem_usage.copy()
-        all_usage.update(delta_usage)
-        if delta_only:
-            all_usage = {k: all_usage[k] for k in all_usage if k.startswith('delta')}
-        _pretty_usage = _pretty_usage_str(all_usage)
         cumulative_str = ''
         if cumulative:
             cumulative_str = f'total: {elapsed_str} '
-        _difference_str = f'delta: {delta_elapsed_str} {cumulative_str} {_pretty_usage}'
-        _message = message + ': ' + _difference_str if message else _difference_str
-        klog.log(level, _message)
-        self.last_mem_usage = mem_usage
+        _difference_str = f'delta: {delta_elapsed_str} {cumulative_str}'
+        if should_log:
+            mem_usage = memory_usage()
+            delta_usage = delta_memory_usage(usage_before, mem_usage)
+            all_usage = mem_usage.copy()
+            all_usage.update(delta_usage)
+            if delta_only:
+                all_usage = {k: all_usage[k] for k in all_usage if k.startswith('delta')}
+            _pretty_usage = _pretty_usage_str(all_usage)
+            _difference_usage_str = _difference_str + ' ' + _pretty_usage
+            _message = message + ': ' + _difference_usage_str if message else _difference_usage_str
+            klog.log(level, _message)
+            self.last_mem_usage = mem_usage
+        else:
+            _message = message + ': ' + _difference_str if message else _difference_str
+            klog.log(basic_level, _message)
+
 
     def log_delta(self, message: str = None,
                   end_time: datetime.datetime = None,
-                  level='DEBUG',
-                  delta_only: bool = False):
-        self._log_difference(self.last_mem_usage, message, end_time, level, delta_only=delta_only)
+                  level='TRACE',
+                  delta_only: bool = False,
+                  basic_level='DEBUG'):
+        self._log_difference(self.last_mem_usage, message, end_time, level, delta_only=delta_only,
+                             basic_level=basic_level)
 
     def log_cumulative(self, message: str = None,
-                       end_time: datetime.datetime = None, level='DEBUG',
+                       end_time: datetime.datetime = None, level='TRACE',
                        delta_only: bool = False):
         self._log_difference(self.first_mem_usage, message, end_time, level, cumulative=True,
                              delta_only=delta_only)

@@ -82,13 +82,21 @@ def logger(module: str = 'karnak'):
     return _logger
 
 
-def log(level: Union[int, str], message, *args, memory: bool = False, exc_info=None,
-        logger_: Optional[logging.Logger] = None):
+def get_log_threshold(level: Union[int, str],
+                      logger_: Optional[logging.Logger] = None) -> (int, bool):
     _logger = logger_ if logger_ is not None else karnak_logger
     _level = _normalize_level(level)
     _py_level = _get_py_level(_level)
+    _should_log = _logger.isEnabledFor(_py_level)
+    return _py_level, _should_log
+
+
+def log(level: Union[int, str], message, *args, memory: bool = False, exc_info=None,
+        logger_: Optional[logging.Logger] = None):
+    _logger = logger_ if logger_ is not None else karnak_logger
+    _py_level, _should_log = get_log_threshold(level, logger_)
     _message = message
-    if memory and _logger.isEnabledFor(_py_level):
+    if memory and _should_log:
         _message += f' (mem {kprof.memory_usage_str()})'
     _logger.log(_py_level, _message, *args, exc_info=exc_info)
 
