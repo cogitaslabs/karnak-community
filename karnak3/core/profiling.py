@@ -133,19 +133,19 @@ class KTimer:
 
 
 class KProfiler(KTimer):
-    def __init__(self):
-        self.first_mem_usage = memory_usage()
+    def __init__(self, run_gc: bool = False):
+        self.first_mem_usage = memory_usage(run_gc=run_gc)
         self.last_mem_usage = self.first_mem_usage
         super().__init__()
 
-    def mem_str(self) -> str:
-        mem_usage = memory_usage()
+    def mem_str(self, run_gc: bool = False) -> str:
+        mem_usage = memory_usage(run_gc=run_gc)
         self.last_mem_usage = mem_usage
         _pretty_mem = _pretty_usage_str(mem_usage)
         return _pretty_mem
 
-    def log_mem(self, message=None, level='DEBUG'):
-        _pretty_mem = self.mem_str()
+    def log_mem(self, message=None, level='DEBUG', run_gc: bool = False):
+        _pretty_mem = self.mem_str(run_gc=run_gc)
         _message = message + ': ' + _pretty_mem if message else _pretty_mem
         klog.log(level, _message)
 
@@ -154,7 +154,8 @@ class KProfiler(KTimer):
                         end_time: datetime.datetime = None,
                         level='TRACE', cumulative: bool = True,
                         delta_only: bool = False,
-                        basic_level='DEBUG'):
+                        basic_level='DEBUG',
+                        run_gc: bool = False):
         _, should_log = klog.get_log_threshold(level)
         elapsed_str = self.get_elapsed_str(end_time)
         delta_elapsed_str = self.get_delta_elapsed(end_time)
@@ -163,7 +164,7 @@ class KProfiler(KTimer):
             cumulative_str = f'total: {elapsed_str} '
         _difference_str = f'delta: {delta_elapsed_str} {cumulative_str}'
         if should_log:
-            mem_usage = memory_usage()
+            mem_usage = memory_usage(run_gc=run_gc)
             delta_usage = delta_memory_usage(usage_before, mem_usage)
             all_usage = mem_usage.copy()
             all_usage.update(delta_usage)
@@ -183,15 +184,19 @@ class KProfiler(KTimer):
                   end_time: datetime.datetime = None,
                   level='TRACE',
                   delta_only: bool = False,
-                  basic_level='DEBUG'):
+                  basic_level='DEBUG',
+                  run_gc: bool = False):
         self._log_difference(self.last_mem_usage, message, end_time, level, delta_only=delta_only,
-                             basic_level=basic_level)
+                             basic_level=basic_level, run_gc=run_gc)
 
     def log_cumulative(self, message: str = None,
                        end_time: datetime.datetime = None, level='TRACE',
-                       delta_only: bool = False):
+                       delta_only: bool = False,
+                       run_gc: bool = False):
         self._log_difference(self.first_mem_usage, message, end_time, level, cumulative=True,
-                             delta_only=delta_only)
+                             delta_only=delta_only, run_gc=run_gc)
 
-    def log_profile(self, message: str = None, end_time: datetime.datetime = None):
-        self.log_cumulative(message=message, end_time=end_time)
+    def log_profile(self, message: str = None,
+                    end_time: datetime.datetime = None,
+                    run_gc: bool = False):
+        self.log_cumulative(message=message, end_time=end_time, run_gc=run_gc)
