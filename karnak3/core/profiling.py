@@ -1,6 +1,6 @@
 import datetime
 import time
-from typing import Dict, List
+from typing import Dict, List, Union
 import psutil
 import sys
 import gc
@@ -48,9 +48,15 @@ def pretty_mem(size_bytes: int, round_decimals: int = 3) -> str:
     return ret
 
 
-def df_memory_usage(df: pd.DataFrame) -> int:
+def df_memory_usage(df: Union[pd.DataFrame, pd.Series]) -> int:
     """dataframe memory usage in bytes"""
-    return df.memory_usage(index=True, deep=True).sum()
+    if isinstance(df, pd.DataFrame):
+        return df.memory_usage(index=True, deep=True).sum()
+    elif isinstance(df, pd.Series):
+        return df.memory_usage(index=True, deep=True)
+    else:
+        klog.warn('df_memory_usage: object is not a dataframe or series')
+        return 0
 
 
 def df_memory_usage_str(df: pd.DataFrame, round_decimals: int = 2) -> str:
@@ -178,7 +184,6 @@ class KProfiler(KTimer):
         else:
             _message = message + ': ' + _difference_str if message else _difference_str
             klog.log(basic_level, _message)
-
 
     def log_delta(self, message: str = None,
                   end_time: datetime.datetime = None,
