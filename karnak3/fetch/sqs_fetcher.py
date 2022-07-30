@@ -91,11 +91,12 @@ class KarnakSqsFetcher(KarnakFetcher):
 
     def populate_worker_queue(self, items: List[FetcherQueueItem],
                               extractor: str,
-                              priority: Optional[int]):
+                              priority: Optional[int],
+                              threads: int = 1):
         worker_queue_name = self.worker_queue_name(extractor=extractor, priority=priority)
         kl.trace(f'putting {len(items)} messages in queue {worker_queue_name}')
         contents = [i.to_string() for i in items]
-        ksqs.send_messages(worker_queue_name, contents)
+        ksqs.send_messages(worker_queue_name, contents, threads=threads)
 
     #
     # worker

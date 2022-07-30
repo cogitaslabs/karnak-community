@@ -59,7 +59,7 @@ def df_memory_usage(df: Union[pd.DataFrame, pd.Series]) -> int:
         return 0
 
 
-def df_memory_usage_str(df: pd.DataFrame, round_decimals: int = 2) -> str:
+def df_memory_usage_str(df: Union[pd.DataFrame, pd.Series], round_decimals: int = 2) -> str:
     return pretty_mem(df_memory_usage(df), round_decimals=round_decimals)
 
 
@@ -79,7 +79,7 @@ def memory_usage(run_gc: bool = True) -> Dict[str, int]:
         'total': mem_usage.total,
         'p rss': process_memory.rss,  # process resident
         'p virt': process_memory.vms,  # process virtual
-        'p maxrss': total_usage.ru_maxrss,  # process max resident
+        'p maxrss': total_usage.ru_maxrss * 1024,  # process max resident
     }
     return usage
 

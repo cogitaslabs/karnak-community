@@ -1,5 +1,5 @@
 import threading
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 import boto3
 
 import karnak3.core.log as kl
@@ -59,30 +59,112 @@ def return_messages(queue_name: str, receipt_handles: List[str], sqs_client=None
         sqs_client.return_message(QueueUrl=queue_url, ReceiptHandle=receipt_handle)
 
 
+# def send_messages(queue_name: str,
+#                   messages: list,
+#                   group_id: Optional[str] = None,
+#                   sqs_client=None,
+#                   threads: int = 1) -> list:
+#     assert threads > 0
+#     if threads == 1:
+#         return _send_messages_single_thread(queue_name=queue_name,
+#                                             messages=messages,
+#                                             group_id=group_id,
+#                                             sqs_client=sqs_client)
+#     else:
+#         return _send_messages_multi_thread(queue_name=queue_name,
+#                                            messages=messages,
+#                                            group_id=group_id)
+
+
 def send_messages(queue_name: str,
                   messages: list,
                   group_id: Optional[str] = None,
-                  sqs_client=None) -> list:
+                  sqs_client=None,
+                  threads: int = 1) -> list:
     """
     Returns: list os failed ids
     """
-    queue_url, sqs_client = get_queue_url(queue_name, sqs_client)
-    failed_ids = []
-    messages_list = messages.copy()
-    ids = list(range(len(messages_list)))
-    while len(messages_list) > 0:
-        # prepare a batch of up to 10 messages
+    failed_indexes: List[int] = []
+    next_message = 0
+
+    @ku.synchronized
+    def pop_messages(n: int = 10) -> Tuple[list, int]:
+        """returns (list of messages, first/-message_index)"""
+        nonlocal next_message
+        messages_slice = messages[next_message: next_message+n]
+        first_message_index = next_message
+        next_message += n
+        return messages_slice, first_message_index
+
+    @ku.synchronized
+    def push_failed_indexes(idxs: List[int]):
+        nonlocal failed_indexes
+        failed_indexes.extend(idxs)
+
+    def send_slice(_sqs_client, queue_url) -> int:
+        """return umber of messages sent (with success or not)"""
+        messages_slice, first_message_index = pop_messages()
+        if messages_slice is None or len(messages_slice) == 0:
+            return 0
         batch_items = []
-        while len(messages_list) > 0 and len(batch_items) < 10:
-            item = {'Id': str(ids.pop(0)), 'MessageBody': messages_list.pop(0)}
+        for j in range(len(messages_slice)):
+            item = {'Id': str(first_message_index + j), 'MessageBody': messages_slice[j]}
             if group_id is not None:
                 item['MessageGroupId'] = group_id
             batch_items.append(item)
-        result = sqs_client.send_message_batch(QueueUrl=queue_url, Entries=batch_items)
+        result = _sqs_client.send_message_batch(QueueUrl=queue_url, Entries=batch_items)
         if result.get('Failed'):
-            failed_ids.extend([int(item['Id']) for item in result.get('Failed')])
-    failed_messages = [messages[i] for i in failed_ids]
+            slice_failed_indexes = [int(item['Id']) for item in result.get('Failed')]
+            if len(slice_failed_indexes) > 0:
+                push_failed_indexes(slice_failed_indexes)
+        return len(batch_items)
+
+    def sender_worker(_sqs_client=None):
+        queue_url, _sqs_client = get_queue_url(queue_name, _sqs_client)
+        keep_going = True
+        while keep_going:
+            keep_going = send_slice(_sqs_client, queue_url) > 0
+
+    if threads <= 1:
+        sender_worker(sqs_client)
+    else:
+        kl.debug(f'putting {len(messages)} messages in queue with {threads} threads')
+        thread_list = []
+        for i in range(threads):
+            t = threading.Thread(target=sender_worker)
+            t.start()
+            thread_list.append(t)
+        for t in thread_list:
+            t.join()
+
+    failed_messages = [messages[i] for i in failed_indexes]
     return failed_messages
+
+
+# def _send_messages_single_thread(queue_name: str,
+#                   messages: list,
+#                   group_id: Optional[str] = None,
+#                   sqs_client=None) -> list:
+#     """
+#     Returns: list os failed ids
+#     """
+#     queue_url, sqs_client = get_queue_url(queue_name, sqs_client)
+#     failed_ids = []
+#     messages_list = messages.copy()
+#     ids = list(range(len(messages_list)))
+#     while len(messages_list) > 0:
+#         # prepare a batch of up to 10 messages
+#         batch_items = []
+#         while len(messages_list) > 0 and len(batch_items) < 10:
+#             item = {'Id': str(ids.pop(0)), 'MessageBody': messages_list.pop(0)}
+#             if group_id is not None:
+#                 item['MessageGroupId'] = group_id
+#             batch_items.append(item)
+#         result = sqs_client.send_message_batch(QueueUrl=queue_url, Entries=batch_items)
+#         if result.get('Failed'):
+#             failed_ids.extend([int(item['Id']) for item in result.get('Failed')])
+#     failed_messages = [messages[i] for i in failed_ids]
+#     return failed_messages
 
 
 def receive_messages(queue_name: str,

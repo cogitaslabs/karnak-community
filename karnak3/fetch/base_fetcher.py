@@ -284,7 +284,8 @@ class KarnakFetcher:
     @abstractmethod
     def populate_worker_queue(self, items: List[FetcherQueueItem],
                               extractor: str,
-                              priority: Optional[int]):
+                              priority: Optional[int],
+                              threads: int = 1):
         pass
 
     def kickoff(self, table: str,
@@ -297,6 +298,7 @@ class KarnakFetcher:
                 wait_empty: bool = False,
                 empty_priority: Optional[int] = None,
                 extractors: List[str] = None,
+                threads: int = 1,
                 **args) -> bool:
 
         _extractors = extractors if extractors is not None else self.extractors
@@ -336,7 +338,8 @@ class KarnakFetcher:
         for extractor in _extractors:
             extractor_items = [x for x in items if x.extractor == extractor]
             kl.debug(f'populating extractor {extractor} with {len(extractor_items)} items.')
-            self.populate_worker_queue(extractor_items, extractor=extractor, priority=priority)
+            self.populate_worker_queue(extractor_items, extractor=extractor, priority=priority,
+                                       threads=threads)
 
         kl.debug(f'kickoff completed for {self.name} table {table}.')
 
