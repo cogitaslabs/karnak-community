@@ -88,13 +88,21 @@ def send_messages(queue_name: str,
     next_message = 0
 
     @ku.synchronized
-    def pop_messages(n: int = 10) -> Tuple[list, int]:
-        """returns (list of messages, first/-message_index)"""
+    def pop_next_slice_index(n: int = 10) -> int:
+        """returns index of first message in next slice, for a slice of n messages"""
         nonlocal next_message
-        messages_slice = messages[next_message: next_message+n]
-        first_message_index = next_message
+        next_slice_index = next_message
         next_message += n
-        return messages_slice, first_message_index
+        return next_slice_index
+
+    # @ku.synchronized
+    # def pop_messages(n: int = 10) -> Tuple[list, int]:
+    #     """returns (list of messages, first_message_index)"""
+    #     nonlocal next_message
+    #     messages_slice = messages[next_message: next_message+n]
+    #     first_message_index = next_message
+    #     next_message += n
+    #     return messages_slice, first_message_index
 
     @ku.synchronized
     def push_failed_indexes(idxs: List[int]):
@@ -103,12 +111,14 @@ def send_messages(queue_name: str,
 
     def send_slice(_sqs_client, queue_url) -> int:
         """return umber of messages sent (with success or not)"""
-        messages_slice, first_message_index = pop_messages()
+        n = 10  # max of messages to get
+        next_slice_index = pop_next_slice_index(n)
+        messages_slice = messages[next_slice_index: next_slice_index + n]
         if messages_slice is None or len(messages_slice) == 0:
             return 0
         batch_items = []
         for j in range(len(messages_slice)):
-            item = {'Id': str(first_message_index + j), 'MessageBody': messages_slice[j]}
+            item = {'Id': str(next_slice_index + j), 'MessageBody': messages_slice[j]}
             if group_id is not None:
                 item['MessageGroupId'] = group_id
             batch_items.append(item)
@@ -139,32 +149,6 @@ def send_messages(queue_name: str,
 
     failed_messages = [messages[i] for i in failed_indexes]
     return failed_messages
-
-
-# def _send_messages_single_thread(queue_name: str,
-#                   messages: list,
-#                   group_id: Optional[str] = None,
-#                   sqs_client=None) -> list:
-#     """
-#     Returns: list os failed ids
-#     """
-#     queue_url, sqs_client = get_queue_url(queue_name, sqs_client)
-#     failed_ids = []
-#     messages_list = messages.copy()
-#     ids = list(range(len(messages_list)))
-#     while len(messages_list) > 0:
-#         # prepare a batch of up to 10 messages
-#         batch_items = []
-#         while len(messages_list) > 0 and len(batch_items) < 10:
-#             item = {'Id': str(ids.pop(0)), 'MessageBody': messages_list.pop(0)}
-#             if group_id is not None:
-#                 item['MessageGroupId'] = group_id
-#             batch_items.append(item)
-#         result = sqs_client.send_message_batch(QueueUrl=queue_url, Entries=batch_items)
-#         if result.get('Failed'):
-#             failed_ids.extend([int(item['Id']) for item in result.get('Failed')])
-#     failed_messages = [messages[i] for i in failed_ids]
-#     return failed_messages
 
 
 def receive_messages(queue_name: str,
