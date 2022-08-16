@@ -2,7 +2,7 @@ from typing import List, Optional
 
 import karnak3.core.log as kl
 import karnak3.cloud.aws as kca
-from karnak3.core.store import StoreResource, StoreEngine
+from core.engine_registry import KarnakUrlEngine, KarnakUrlResource
 
 
 def ssm_get_parameter(name, aws_region: Optional[str] = None) -> str:
@@ -22,14 +22,14 @@ def ssm_get_parameters_by_path(path: str, aws_region: Optional[str] = None) -> L
     return param_value_list
 
 
-class SsmStoreResource(StoreResource):
+class SsmStoreResource(KarnakUrlResource):
 
     def get_content(self) -> str:
-        content = ssm_get_parameter(self.resource_path)
+        content = ssm_get_parameter(self.resource_uri)
         return content
 
 
-class SsmStoreEngine(StoreEngine):
+class SsmStoreEngine(KarnakUrlEngine):
     def __init__(self):
         super().__init__('ssm')
 

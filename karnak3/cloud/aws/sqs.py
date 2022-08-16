@@ -154,6 +154,47 @@ def send_messages(queue_name: str,
 def receive_messages(queue_name: str,
                      max_messages: int = 10,
                      wait_seconds: int = 0,
+                     sqs_client=None,
+                     threads: int = 1) -> Dict[(str, str)]:
+    if threads == 1 or max_messages <= 100:
+        result_messages = _receive_messages(queue_name=queue_name,
+                                 max_messages=max_messages,
+                                 wait_seconds=wait_seconds,
+                                 sqs_client=sqs_client)
+    else:
+        result_messages = {}
+
+        @ku.synchronized
+        def push_messages(messages: Dict[(str, str)]):
+            nonlocal result_messages
+            result_messages.update(messages)
+
+        def reader_worker(max_msg: int):
+            d = _receive_messages(queue_name=queue_name,
+                                  max_messages=max_msg,
+                                  wait_seconds=wait_seconds,
+                                  sqs_client=sqs_client)
+            push_messages(d)
+
+        _logger.debug(f'reading {max_messages} messages from queue with {threads} threads')
+        thread_list = []
+        max_messages_1 = max_messages // threads
+        max_messages_0 = max_messages - (max_messages_1 * (threads - 1))
+        for i in range(threads):
+            max_messages_t = max_messages_1 if i > 0 else max_messages_0
+            t = threading.Thread(target=reader_worker, args=(max_messages_t,))
+            t.start()
+            thread_list.append(t)
+        for t in thread_list:
+            t.join()
+
+    _logger.trace(f'sqs: {len(result_messages)} messages read from {queue_name}')
+    return result_messages
+
+
+def _receive_messages(queue_name: str,
+                     max_messages: int = 10,
+                     wait_seconds: int = 0,
                      sqs_client=None) -> Dict[(str, str)]:
     """Returns a dict of {message_handle: body}"""
     queue_url, sqs_client = get_queue_url(queue_name, sqs_client)
@@ -175,7 +216,7 @@ def receive_messages(queue_name: str,
             # _logger.trace(f'sqs: 0 messages read from {queue_name}')
             break
 
-    _logger.trace(f'sqs: {len(result_messages)} messages read from {queue_name}')
+    # _logger.trace(f'sqs: {len(result_messages)} messages read from {queue_name}')
     return result_messages
 
 

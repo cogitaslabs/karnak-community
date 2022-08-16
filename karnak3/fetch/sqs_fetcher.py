@@ -171,15 +171,19 @@ class KarnakSqsFetcher(KarnakFetcher):
     # consolidator
     #
 
-    def pop_result_items(self, max_items) -> List[FetcherResult]:
+    def pop_result_items(self, max_items: int,
+                         threads: int = 1) -> List[FetcherResult]:
         items = ksqs.receive_messages(queue_name=self.results_queue_name(),
-                                      max_messages=max_items, wait_seconds=20)
+                                      max_messages=max_items, wait_seconds=20,
+                                      threads=threads)
         ret = [FetcherResult.from_string(items[handle], handle=handle)
                for handle in items if items is not None]
         return ret
 
     def consolidate(self, max_queue_items_per_file: int = 120_000,
-                    max_rows_per_file: int = 2_000_000, **args):
+                    max_rows_per_file: int = 2_000_000,
+                    threads: int = 1,
+                    **args):
         kl.info(f'consolidate {self.name}: start.')
         kl.debug(f'max_queue_items_per_file: {max_queue_items_per_file}, '
                  f'max_rows_per_file: {max_rows_per_file} ')
@@ -199,7 +203,8 @@ class KarnakSqsFetcher(KarnakFetcher):
             results: List[FetcherResult] = []
             while len(results) < messages_to_fetch:
                 next_to_fetch = messages_to_fetch - len(results)
-                new_results = self.pop_result_items(max_items=next_to_fetch)
+                new_results = self.pop_result_items(max_items=next_to_fetch,
+                                                    threads=threads)
                 kl.debug(f'read {len(new_results)} new messages.')
                 results.extend(new_results)
                 if len(new_results) == 0:

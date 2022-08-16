@@ -11,9 +11,9 @@ class KarnakRegistryException(ku.KarnakException):
 
 
 class KarnakResource:
-    def __init__(self, resource_type: str, resource_path: str):
+    def __init__(self, resource_type: str, resource_uri: str):
         self.resource_type = resource_type
-        self.resource_path = resource_path
+        self.resource_uri = resource_uri
 
     def get_content(self) -> Any:
         raise KarnakRegistryException(f'resource {self.resource_type} '
@@ -66,23 +66,38 @@ class KarnakRegistry:
         return self._engines.get(key)
 
     def get_engine(self, resource_name: str,
-                   include_missing: bool = True) -> Optional[KarnakEngine]:
+                   install_missing: bool = True,
+                   allow_not_found: bool = True) -> Optional[KarnakEngine]:
         for k in self._engines.keys():
             engine = self._engines[k]
             if engine.is_valid_resource_name(resource_name):
                 return engine
-        if include_missing:
-            return self.get_missing_engine(resource_name)
-        else:
-            return None
+        ret = None
+        if install_missing:
+            ret = self.install_missing_engine(resource_name, allow_not_found=allow_not_found)
+        if ret is not None or allow_not_found:
+            return ret
+        raise ku.KarnakException(f'engine registry {self.name} could for find an '
+                                 f'engine for resource {resource_name}')
 
     def get_missing_engine(self, resource: str) -> Optional[KarnakEngine]:
+        return None
+
+    def install_missing_engine(self, resource: str,
+                               allow_not_found: bool = False) -> Optional[KarnakEngine]:
+        engine = self.get_missing_engine(resource)
+        if engine is not None:
+            engine.start()
+            return engine
+        if allow_not_found:
+            return None
         raise KarnakRegistryException(f'no engine found in registry {self.name}'
                                       f' for resource {resource}')
 
     def get_resource(self, resource_name: str,
-                     include_missing: bool = True) -> Optional[KarnakResource]:
-        engine = self.get_engine(resource_name, include_missing)
+                     install_missing: bool = True,
+                     allow_not_found: bool = True) -> Optional[KarnakResource]:
+        engine = self.get_engine(resource_name, install_missing, allow_not_found=allow_not_found)
         if not engine:
             return None
         return engine.get_resource(resource_name)
@@ -99,27 +114,35 @@ class KarnakRegistry:
 # URI Engine
 #
 
+class KarnakUrlRegistry(KarnakRegistry):
+    @staticmethod
+    def get_key_from_url(url: str):
+        parsed_url = urlparse(url)
+        scheme = parsed_url.scheme
+        return scheme
+
+
 class KUriRegistryException(KarnakRegistryException):
     pass
 
 
-class KarnakUriResource(KarnakResource):
+class KarnakUrlResource(KarnakResource):
 
-    def __init__(self, resource_type: str, uri: str):
-        super().__init__(resource_type=resource_type, resource_path=uri)
-        self.uri = uri
-        parsed_uri = urlparse(uri)
-        self.scheme = parsed_uri.scheme
-        self.netloc = parsed_uri.netloc
-        self.hostname = parsed_uri.hostname
-        self.port = parsed_uri.port
-        self.path = parsed_uri.path
-        self.params = parsed_uri.params
-        self.query = parsed_uri.query
-        self.fragment = parsed_uri.fragment
+    def __init__(self, resource_type: str, url: str):
+        super().__init__(resource_type=resource_type, resource_uri=url)
+        self.url = url
+        parsed_url = urlparse(url)
+        self.scheme = parsed_url.scheme
+        self.netloc = parsed_url.netloc
+        self.hostname = parsed_url.hostname
+        self.port = parsed_url.port
+        self.path = parsed_url.path
+        self.params = parsed_url.params
+        self.query = parsed_url.query
+        self.fragment = parsed_url.fragment
 
 
-class KarnakUriEngine(KarnakEngine):
+class KarnakUrlEngine(KarnakEngine):
 
     def __init__(self, scheme: str):
         super().__init__(key=scheme)
@@ -136,8 +159,8 @@ class KarnakUriEngine(KarnakEngine):
         parsed_uri = urlparse(resource_name)
         return parsed_uri.scheme == self.scheme
 
-    def is_valid_uri(self, uri: str) -> bool:
-        return self.is_valid_resource_name(uri)
+    def is_valid_url(self, url: str) -> bool:
+        return self.is_valid_resource_name(url)
 
     # def resource_path(self, uri: str):
     #     # TODO use uri parser

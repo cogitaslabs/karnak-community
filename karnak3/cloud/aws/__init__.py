@@ -28,7 +28,7 @@ _client_lock = threading.RLock()
 _aws_client_cache: Dict[str, Any] = {}
 
 
-def get_aws_client(service: str, aws_region: Optional[str] = None, use_cache: bool = True):
+def get_aws_client(service: str, aws_region: Optional[str] = None, use_cache: bool = False):
     if use_cache:
         client = _aws_client_cache.get(service)
         if client:

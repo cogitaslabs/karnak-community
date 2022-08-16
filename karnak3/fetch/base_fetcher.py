@@ -365,12 +365,15 @@ class KarnakFetcher:
     #
 
     @abstractmethod
-    def pop_result_items(self, max_items) -> List[FetcherResult]:
+    def pop_result_items(self, max_items: int,
+                         threads: int = 1) -> List[FetcherResult]:
         pass
 
     @abstractmethod
     def consolidate(self, max_queue_items_per_file: int = 120_000,
-                    max_rows_per_file: int = 2_000_000, **args):
+                    max_rows_per_file: int = 2_000_000,
+                    threads: int = 1,
+                    **args):
         pass
 
     def results_df(self, fetched_data: List[FetcherResult]) -> pd.DataFrame:
