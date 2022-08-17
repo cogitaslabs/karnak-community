@@ -201,7 +201,9 @@ class KarnakSqsFetcher(KarnakFetcher):
             messages_to_fetch = min(remaining, 120_000, max_queue_items_per_file)
             kl.debug(f'reading {messages_to_fetch} messages from results queue...')
             results: List[FetcherResult] = []
-            while len(results) < messages_to_fetch:
+            fetch_cnt = 0
+            MAX_MESSAGE_FETCH_RETRIES = 5
+            while len(results) < messages_to_fetch and fetch_cnt < MAX_MESSAGE_FETCH_RETRIES:
                 next_to_fetch = messages_to_fetch - len(results)
                 new_results = self.pop_result_items(max_items=next_to_fetch,
                                                     threads=threads)
@@ -209,13 +211,15 @@ class KarnakSqsFetcher(KarnakFetcher):
                 results.extend(new_results)
                 if len(new_results) == 0:
                     break
+                fetch_cnt += 1
             if len(results) == 0:
                 break
             remaining -= len(results)
             # fetched_df = self.data_to_df(results)
             fetched_df = self.results_df(results)
 
-            self.prepare_consolidation(fetched_df, max_rows_per_file=max_rows_per_file, **args)
+            self.prepare_consolidation(fetched_df, max_rows_per_file=max_rows_per_file,
+                                       threads=threads, **args)
             del fetched_df
             # gc.collect()
 
@@ -234,7 +238,8 @@ class KarnakSqsFetcher(KarnakFetcher):
         self.table_consolidation_processed_handle_cnt = self.table_consolidation_full_handle_cnt.copy()
         self.table_consolidation_processed_handle_cnt[:] = 0
 
-    def clean_slice_consolidation(self, prepared_file_df: pd.DataFrame, table: str):
+    def clean_slice_consolidation(self, prepared_file_df: pd.DataFrame,
+                                  table: str, threads: int = 1):
         # count handles processed and find those fully processed to remove
         slice_handle_cnt = prepared_file_df['handle'].value_counts()
         table_handle_cnt_new = \
@@ -247,7 +252,8 @@ class KarnakSqsFetcher(KarnakFetcher):
 
         # handles = list(prepared_file_df['handle'].unique())
         kl.debug(f'removing {len(handles)} messages from results queue...')
-        ksqs.remove_messages(queue_name=self.results_queue_name(), receipt_handles=handles)
+        ksqs.remove_messages(queue_name=self.results_queue_name(), receipt_handles=handles,
+                             threads=threads)
         self.table_consolidation_processed_handle_cnt = table_handle_cnt_new
 
 

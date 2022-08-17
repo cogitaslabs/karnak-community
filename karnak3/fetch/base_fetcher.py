@@ -449,7 +449,8 @@ class KarnakFetcher:
             kl.trace(f'effective max_rows_per_file for table {table}: {effective_mrpf}')
         return effective_mrpf
 
-    def prepare_consolidation(self, fetched_df: pd.DataFrame, max_rows_per_file: int, **args):
+    def prepare_consolidation(self, fetched_df: pd.DataFrame, max_rows_per_file: int,
+                              threads: int = 1, **args):
         if fetched_df is None or len(fetched_df) == 0:
             kl.info('empty dataframe, nothing to save.')
 
@@ -481,7 +482,7 @@ class KarnakFetcher:
                     self.save_consolidation(prepared_file_df, table, time_slice_id=time_slice_id,
                                             time_slice_ref=time_slice_ref,
                                             current_file=current_file, n_files=n_files, **args)
-                    self.clean_slice_consolidation(prepared_file_df, table)
+                    self.clean_slice_consolidation(prepared_file_df, table, threads=threads)
 
                     kprof.log_mem('memory usage before gc')
                     del prepared_file_df
@@ -492,7 +493,8 @@ class KarnakFetcher:
         pass
 
     @abstractmethod
-    def clean_slice_consolidation(self, prepared_file_df: pd.DataFrame, table: str):
+    def clean_slice_consolidation(self, prepared_file_df: pd.DataFrame,
+                                  table: str, threads: int = 1):
         pass
 
 

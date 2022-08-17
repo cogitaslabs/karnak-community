@@ -2,6 +2,8 @@ import threading
 from typing import Optional, List, Dict, Any, Tuple
 import boto3
 
+from multiprocessing.pool import ThreadPool
+
 import karnak3.core.log as kl
 import karnak3.core.util as ku
 
@@ -38,12 +40,32 @@ def remove_message(queue_name: str, receipt_handle: str, sqs_client=None):
     sqs_client.delete_message(QueueUrl=queue_url, ReceiptHandle=receipt_handle)
 
 
-def remove_messages(queue_name: str, receipt_handles: List[str], sqs_client=None):
+def remove_messages(queue_name: str, receipt_handles: List[str],
+                    sqs_client=None, threads: int = 1):
     queue_url, sqs_client = get_queue_url(queue_name, sqs_client)
     chunks = [receipt_handles[i:i+10] for i in range(0, len(receipt_handles), 10)]
-    for chunk in chunks:
-        entries = [{'Id': str(i), 'ReceiptHandle': chunk[i]} for i in range(0, len(chunk))]
-        sqs_client.delete_message_batch(QueueUrl=queue_url, Entries=entries)
+
+    def chunk_to_entries(_chunk: List[str]) -> List[Dict[str, str]]:
+        entries_l = [{'Id': str(i), 'ReceiptHandle': _chunk[i]} for i in range(0, len(_chunk))]
+        return entries_l
+
+    if threads == 1 or len(receipt_handles) <= 100:
+        queue_url, sqs_client = get_queue_url(queue_name, sqs_client)
+        for chunk in chunks:
+            entries = chunk_to_entries(chunk)
+            sqs_client.delete_message_batch(QueueUrl=queue_url, Entries=entries)
+    else:
+        def delete_batch(_chunk: List[str]):
+            # client is not thread safe.
+            # TODO to avoid creating a client for every chunk,
+            #  rewrite using a Queue and not a Pool.
+            sqs_client_t = get_client()  
+            _entries = chunk_to_entries(_chunk)
+            sqs_client_t.delete_message_batch(QueueUrl=queue_url, Entries=_entries)
+            _logger.trace(f'thread removed {len(_entries)} messages from queue.')
+        pool = ThreadPool(threads)
+        pool.map(delete_batch, chunks)
+        _logger.debug(f'removed {len(receipt_handles)} messages from queue.')
 
 
 def return_message(queue_name: str, receipt_handle: str, sqs_client=None):
@@ -156,11 +178,11 @@ def receive_messages(queue_name: str,
                      wait_seconds: int = 0,
                      sqs_client=None,
                      threads: int = 1) -> Dict[(str, str)]:
-    if threads == 1 or max_messages <= 100:
+    if threads == 1 or max_messages <= 500:
         result_messages = _receive_messages(queue_name=queue_name,
-                                 max_messages=max_messages,
-                                 wait_seconds=wait_seconds,
-                                 sqs_client=sqs_client)
+                                            max_messages=max_messages,
+                                            wait_seconds=wait_seconds,
+                                            sqs_client=sqs_client)
     else:
         result_messages = {}
 
@@ -173,7 +195,7 @@ def receive_messages(queue_name: str,
             d = _receive_messages(queue_name=queue_name,
                                   max_messages=max_msg,
                                   wait_seconds=wait_seconds,
-                                  sqs_client=sqs_client)
+                                  sqs_client=None)
             push_messages(d)
 
         _logger.debug(f'reading {max_messages} messages from queue with {threads} threads')
