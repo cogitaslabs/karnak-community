@@ -1,0 +1,12 @@
+Description:
+    AWS CloudFormation Template for Karnak tntegration test suite.
+
+
+Resources:
+
+  GlueDatabaseKarnakIntegrationTest:
+    Type: AWS::Glue::Database
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseInput:
+        Name: karnak_test_suite

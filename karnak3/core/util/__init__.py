@@ -5,6 +5,7 @@ from .string import *
 from .collections import *
 from .datetime import *
 from .tempfile import *
+from .numeric import *
 
 import karnak3.core.log as kl
 

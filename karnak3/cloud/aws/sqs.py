@@ -59,7 +59,7 @@ def remove_messages(queue_name: str, receipt_handles: List[str],
             # client is not thread safe.
             # TODO to avoid creating a client for every chunk,
             #  rewrite using a Queue and not a Pool.
-            sqs_client_t = get_client()  
+            sqs_client_t = get_client()
             _entries = chunk_to_entries(_chunk)
             sqs_client_t.delete_message_batch(QueueUrl=queue_url, Entries=_entries)
             _logger.trace(f'thread removed {len(_entries)} messages from queue.')

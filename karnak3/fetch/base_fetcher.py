@@ -265,6 +265,7 @@ class KarnakFetcher:
         :param scope: scope to limit keys fetched
         :param args: additional arguments needed for derived classes
         :param priority: priority of queue to put items
+        :param dry_run: if True, dos not put items in queue
         :return: list of items to be fetched
         """
         return []
@@ -299,6 +300,7 @@ class KarnakFetcher:
                 empty_priority: Optional[int] = None,
                 extractors: List[str] = None,
                 threads: int = 1,
+                dry_run: bool = False,
                 **args) -> bool:
 
         _extractors = extractors if extractors is not None else self.extractors
@@ -338,8 +340,11 @@ class KarnakFetcher:
         for extractor in _extractors:
             extractor_items = [x for x in items if x.extractor == extractor]
             kl.debug(f'populating extractor {extractor} with {len(extractor_items)} items.')
-            self.populate_worker_queue(extractor_items, extractor=extractor, priority=priority,
-                                       threads=threads)
+            if dry_run:
+                kl.info(f'dry run enabled: will not put {len(extractor_items)} items in queue.')
+            else:
+                self.populate_worker_queue(extractor_items, extractor=extractor, priority=priority,
+                                           threads=threads)
 
         kl.debug(f'kickoff completed for {self.name} table {table}.')
 
