@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC
+from typing import Iterable
 
 import karnak3.cloud.aws.sqs as ksqs
 from karnak3.core.util import synchronized
@@ -71,20 +72,39 @@ class KarnakSqsFetcher(KarnakFetcher):
         else:
             return 'working', working_priority
 
+    def _queue_size(self, queue_name: str, sqs_client=None) -> int:
+        attr = ksqs.queue_attributes(queue_name, sqs_client=sqs_client)
+        available = int(attr['ApproximateNumberOfMessages'])
+        in_flight = int(attr['ApproximateNumberOfMessagesNotVisible'])
+        delayed = int(attr['ApproximateNumberOfMessagesDelayed'])
+        return available + in_flight + delayed
+
     def queue_sizes(self, sqs_client=None) -> Dict[str, int]:
         """Returns approximate message count for all queues."""
         kl.trace(f'getting queue sizes')
         _sqs_client = sqs_client if sqs_client is not None else self.default_sqs_client
         qs = {}
         queue_names = self.worker_queue_names() + [self.results_queue_name()]
-        for q in queue_names:
-            attr = ksqs.queue_attributes(q, sqs_client=_sqs_client)
-            available = int(attr['ApproximateNumberOfMessages'])
-            in_flight = int(attr['ApproximateNumberOfMessagesNotVisible'])
-            delayed = int(attr['ApproximateNumberOfMessagesDelayed'])
-            qs[q] = available + in_flight + delayed
+        for qn in queue_names:
+            qs[qn] = self._queue_size(qn)
         return qs
 
+    #
+    # purge
+    #
+
+    def purge(self,
+              priority: Optional[int] = None,
+              extractor: Optional[str] = None,
+              purge_all: bool = None):
+
+        if purge_all:
+            self.purge_all_queues()
+        else:
+            if extractor is None:
+                kl.error('purge not performed: extractor not defined.')
+            else:
+                self.purge_worker_queue(extractor, priority)
     #
     # kickoff
     #
@@ -255,6 +275,24 @@ class KarnakSqsFetcher(KarnakFetcher):
         ksqs.remove_messages(queue_name=self.results_queue_name(), receipt_handles=handles,
                              threads=threads)
         self.table_consolidation_processed_handle_cnt = table_handle_cnt_new
+
+    #
+    # purge
+    #
+
+    def _purge_worker_queues(self, queue_names: Iterable[str]):
+        for qn in queue_names:
+            qs = self._queue_size(qn)
+            kl.info(f'purging queue {qn} which had {qs} messages...')
+            ksqs.purge_queue(qn)
+
+    def purge_worker_queue(self, extractor: str, priority: Optional[int]):
+        queue_name = self.worker_queue_name(extractor=extractor, priority=priority)
+        self._purge_worker_queues([queue_name])
+
+    def purge_all_queues(self):
+        queue_names = self.worker_queue_names(extractor=None)
+        self._purge_worker_queues(queue_names)
 
 
 class KarnakSqsFetcherWorker(KarnakFetcherWorker, ABC):
