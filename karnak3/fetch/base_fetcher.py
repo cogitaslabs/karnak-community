@@ -209,7 +209,7 @@ class KarnakFetcher:
     #
 
     def priorities(self) -> List[Optional[int]]:
-        return [None] if self.max_priority is None else list(range(1, self.max_priority + 1)) + [None]
+        return [None] if self.max_priority is None else list(range(self.max_priority, 0, -1)) + [None]
 
     @abstractmethod
     def fetcher_state(self, queue_sizes: Optional[Dict[str, int]] = None) -> (str, int):
