@@ -62,7 +62,7 @@ def remove_messages(queue_name: str, receipt_handles: List[str],
             sqs_client_t = get_client()
             _entries = chunk_to_entries(_chunk)
             sqs_client_t.delete_message_batch(QueueUrl=queue_url, Entries=_entries)
-            _logger.trace(f'thread removed {len(_entries)} messages from queue.')
+            # _logger.trace(f'thread removed {len(_entries)} messages from queue.')
         pool = ThreadPool(threads)
         pool.map(delete_batch, chunks)
         _logger.debug(f'removed {len(receipt_handles)} messages from queue.')
