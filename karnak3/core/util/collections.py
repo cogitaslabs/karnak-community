@@ -1,4 +1,7 @@
 import collections.abc
+from typing import Iterable, List
+
+import pandas as pd
 
 
 # TODO review
@@ -52,3 +55,13 @@ def safe_join(*elements: str, sep='') -> str:
 
 def is_list_like(obj) -> bool:
     return isinstance(obj, collections.abc.Sequence) and not isinstance(obj, str)
+
+
+def remove_none(it: Iterable) -> List:
+    ret = [x for x in it if x is not None]
+    return ret
+
+
+def remove_na(it: Iterable) -> List:
+    ret = [x for x in it if x is not None and not pd.isna(x)]
+    return ret

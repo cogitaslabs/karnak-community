@@ -1,4 +1,5 @@
-from typing import Union, Optional, Tuple, List
+import datetime
+from typing import Union, Optional, Tuple, List, Dict
 
 from datetime import timedelta
 
@@ -21,6 +22,39 @@ valid_auto_window_basic = ['full', 'last-year', 'ytd', 'last-month', 'mtd', 'yes
 # valid_auto_window_bookmark = ['bookmark', 'leftover']
 
 valid_auto_window = valid_auto_window_basic # + valid_auto_window_bookmark
+
+#
+# v2
+#
+
+valid_window_v2 = ['last-year', 'ytd', 'last-month', 'mtd', 'yesterday', 'today',
+                   'last-weekday', # demands parameter weekday
+                   ]
+
+frequency_map_v2: Dict[str, Union[timedelta, str]] = {
+    'minute': timedelta(minutes=1),
+    '1min': timedelta(minutes=1),
+    '5min': timedelta(minutes=5),
+    '10min': timedelta(minutes=10),
+    '15min': timedelta(minutes=15),
+    '20min': timedelta(minutes=20),
+    '30min': timedelta(minutes=30),
+
+    'hour': timedelta(hours=1),
+    '1h': timedelta(hours=1),
+
+    'day': timedelta(days=1),
+    '1d': timedelta(days=1),
+
+    'week': timedelta(days=7),
+    '1w': timedelta(days=7),
+
+    'month': 'month',
+    'year': 'year',
+
+}
+
+valid_frequency_v2 = frequency_map_v2.keys()
 
 
 #

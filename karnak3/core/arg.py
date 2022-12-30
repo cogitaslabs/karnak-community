@@ -125,6 +125,31 @@ def add_window_params(parser: argparse.ArgumentParser, time_type: str = 'timesta
                         type=int)
 
 
+# TODO wip
+def add_window_params_v2(parser: argparse.ArgumentParser, time_type: str = 'timestamp'):
+    assert time_type in ['date', 'timestamp']
+
+    if not test_argument_added(parser, '--timezone'):
+        add_core_params(parser)
+    time_parser = parse_timestamp if time_type == 'timestamp' else parse_date
+    parser.add_argument('--window', '-w', type=str, choices=ktw.valid_window_v2,
+                        help='automatic window calculation from period')
+    parser.add_argument('--window-start', '--start', type=time_parser,
+                        help='start of time window, inclusive.')
+    parser.add_argument('--window-end', '--end', type=time_parser,
+                        help='end of time window, exclusive (end value not included in range)')
+    parser.add_argument('--frequency', type=str, choices=ktw.valid_frequency_v2,
+                        default='day', help='frequency (interval) between samples in a window')
+    parser.add_argument('--dates', '--dt',  nargs='*', type=time_parser,
+                        help='each date is set as an individual time window')
+    parser.add_argument('--weekdays', nargs='+', type=str, choices=ku.valid_weekday_str,
+                        help='select only chosen weekdays in time window')
+    parser.add_argument('--days', type=int,
+                        help='shortcut to set number of days to fetch. '
+                             'Invalid if both window start or window end is present '
+                             'or frequency is not day.')
+
+
 def parse_window_slices(parsed_args,
                         window_start: Union[datetime.datetime, datetime.date, None] = None,
                         window_end: Union[datetime.datetime, datetime.date, None] = None,
