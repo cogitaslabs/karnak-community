@@ -305,7 +305,7 @@ class KarnakFetcher:
 
         _extractors = extractors if extractors is not None else self.extractors
 
-        # test if its ready to kickoff
+        # test if it is ready to kickoff
         if if_empty:
             kickoff_ready, state = self.kickoff_ready(empty_priority)
             if not kickoff_ready:
@@ -638,7 +638,6 @@ class KarnakFetcherWorker:
             self.set_state('idle', force=True)
             self.idle_counter = 0
         return self.state
-
 
     @ku.synchronized
     def reset_idle_counter(self):

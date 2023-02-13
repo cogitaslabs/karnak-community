@@ -1,5 +1,5 @@
 import collections.abc
-from typing import Iterable, List
+from typing import Iterable, List, Optional
 
 import pandas as pd
 
@@ -54,7 +54,15 @@ def safe_join(*elements: str, sep='') -> str:
 
 
 def is_list_like(obj) -> bool:
-    return isinstance(obj, collections.abc.Sequence) and not isinstance(obj, str)
+    return is_sequence(obj)
+
+
+def is_sequence(obj) -> bool:
+    return obj is not None and isinstance(obj, collections.abc.Sequence) and not isinstance(obj, str)
+
+
+def is_map(obj) -> bool:
+    return obj is not None and isinstance(obj, collections.abc.Mapping)
 
 
 def remove_none(it: Iterable) -> List:
@@ -64,4 +72,15 @@ def remove_none(it: Iterable) -> List:
 
 def remove_na(it: Iterable) -> List:
     ret = [x for x in it if x is not None and not pd.isna(x)]
+    return ret
+
+
+def safe_get(d: Optional[collections.abc.Mapping], *keys):
+    if not is_map(d):
+        return None
+    ret = d
+    for k in keys:
+        if ret is None:
+            return None
+        ret = ret.get(k)
     return ret

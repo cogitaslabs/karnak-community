@@ -218,6 +218,20 @@ def ts_to_dt(ts: datetime.date) -> datetime.date:
     return datetime.date(ts.year, ts.month, ts.day)
 
 
+def to_ts(kdt: kdatelike, tz=None) -> datetime.datetime:
+    if isinstance(kdt, datetime.datetime):
+        return kdt
+    else:
+        return dt_to_ts(kdt, tz=tz)
+
+
+def to_dt(kdt: kdatelike) -> datetime.date:
+    if isinstance(kdt, datetime.datetime):
+        return ts_to_dt(kdt)
+    else:
+        return kdt
+
+
 def now(tz=None):
     return datetime.datetime.now(tz=tz)
 

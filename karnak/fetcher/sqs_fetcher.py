@@ -189,7 +189,7 @@ class SqsFetcher:
             return False
 
         # keys and initial strategies
-        df = pd.DataFrame(self.keys_to_fetch(max_fetch=max_fetch, force_fetch=force_fetch), columns={'key'})
+        df = pd.DataFrame(self.keys_to_fetch(max_fetch=max_fetch, force_fetch=force_fetch), columns=['key'])
         if len(df) == 0:
             kl.info(f'cannot kickoff {self.name}: 0 ids to fetch.')
             return False
