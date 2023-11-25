@@ -17,13 +17,15 @@ import pyathenajdbc.util
 from typing import Optional, Dict, Any, Union
 
 import karnak.util.log as klog
-from karnak3.core.db import KSqlAlchemyEngine, KPandasDataFrameFuture, KArrowTableFuture, KarnakDBException
+from karnak3.core.db import KSqlAlchemyEngine, KPandasDataFrameFuture, KArrowTableFuture, \
+    KarnakDBException
 from karnak3.core.db import KPandasDataFrameConstantFuture  # convenience for lib users. do not remove
 import karnak3.core.arg as karg
 import karnak3.cloud.aws as kaws
 import karnak3.core.util as ku
 import karnak3.core.log as kl
-from karnak3.core.config import coalesce_config
+from karnak3.core.config import coalesce_config, coalesce_config_bool, coalesce_config_int
+
 
 # _paramstyle = 'numeric'
 
@@ -32,13 +34,27 @@ class AthenaConfig:
     def __init__(self, region: str,
                  default_database: Optional[str] = None,
                  workgroup: Optional[str] = None,
-                 output_location: Optional[str] = None):
+                 output_location: Optional[str] = None,
+                 result_reuse_enable: bool = False,
+                 result_reuse_minutes: int = 60):
 
         self.region = ku.coalesce(region, kaws.aws_default_region())
         self.default_database = coalesce_config(default_database, 'ATHENA_DEFAULT_DATABASE')
         self.workgroup = coalesce_config(workgroup, 'ATHENA_WORKGROUP')
         self.output_location = coalesce_config(output_location, 'ATHENA_OUTPUT_LOCATION')
+        self.reuse_result_enable = coalesce_config_bool(result_reuse_enable, 'ATHENA_REUSE_RESULTS')
+        self.reuse_result_minutes = coalesce_config_int(result_reuse_minutes, 'ATHENA_REUSE_MINUTES')
         super().__init__()
+
+    def copy(self):
+        return type(self)(
+            region=self.region,
+            default_database=self.default_database,
+            workgroup=self.workgroup,
+            output_location=self.output_location,
+            result_reuse_enable=self.reuse_result_enable,
+            result_reuse_minutes=self.reuse_result_minutes
+        )
 
 
 class KAthenaPandasDataFrameFuture(KPandasDataFrameFuture):
@@ -110,8 +126,10 @@ class AthenaEngine(KSqlAlchemyEngine):
 
             conn_params = {'work_group': config.workgroup,
                            'region_name': config.region,
-                           #'output_location': config.output_location,
+                           # 'output_location': config.output_location,
                            's3_staging_dir': config.output_location,
+                           'result_reuse_enable': config.reuse_result_enable,
+                           'result_reuse_minutes': config.reuse_result_minutes,
                            }
             if config.default_database is not None:
                 conn_params['schema_name'] = config.default_database
