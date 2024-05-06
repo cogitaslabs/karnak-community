@@ -42,8 +42,8 @@ class AthenaConfig:
         self.default_database = coalesce_config(default_database, 'ATHENA_DEFAULT_DATABASE')
         self.workgroup = coalesce_config(workgroup, 'ATHENA_WORKGROUP')
         self.output_location = coalesce_config(output_location, 'ATHENA_OUTPUT_LOCATION')
-        self.reuse_result_enable = coalesce_config_bool(result_reuse_enable, 'ATHENA_REUSE_RESULTS')
-        self.reuse_result_minutes = coalesce_config_int(result_reuse_minutes, 'ATHENA_REUSE_MINUTES')
+        self.result_reuse_enable = coalesce_config_bool(result_reuse_enable, 'ATHENA_REUSE_RESULTS')
+        self.result_reuse_minutes = coalesce_config_int(result_reuse_minutes, 'ATHENA_REUSE_MINUTES')
         super().__init__()
 
     def copy(self):
@@ -52,8 +52,8 @@ class AthenaConfig:
             default_database=self.default_database,
             workgroup=self.workgroup,
             output_location=self.output_location,
-            result_reuse_enable=self.reuse_result_enable,
-            result_reuse_minutes=self.reuse_result_minutes
+            result_reuse_enable=self.result_reuse_enable,
+            result_reuse_minutes=self.result_reuse_minutes
         )
 
 
@@ -128,8 +128,8 @@ class AthenaEngine(KSqlAlchemyEngine):
                            'region_name': config.region,
                            # 'output_location': config.output_location,
                            's3_staging_dir': config.output_location,
-                           'result_reuse_enable': config.reuse_result_enable,
-                           'result_reuse_minutes': config.reuse_result_minutes,
+                           'result_reuse_enable': config.result_reuse_enable,
+                           'result_reuse_minutes': config.result_reuse_minutes,
                            }
             if config.default_database is not None:
                 conn_params['schema_name'] = config.default_database
