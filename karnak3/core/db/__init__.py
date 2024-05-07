@@ -239,7 +239,8 @@ class KSqlAlchemyEngine:
                 result = self._cursor_execute(cursor, _sql, _params)
                 # self.test_libs_compatibility()
                 # result_pd = self._result_pd(cursor, result)
-                del result
+                conn.commit()
+                # del result
                 # self.test_libs()
 
     def select_pa_async(self, sql: str,
