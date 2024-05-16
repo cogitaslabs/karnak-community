@@ -1,6 +1,6 @@
 import contextlib
 import numbers
-from abc import abstractmethod
+from abc import abstractmethod, ABC
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Union, Optional, Tuple, Any
 import collections.abc
@@ -11,6 +11,7 @@ import sqlalchemy.pool
 import sqlparams
 import pandas as pd
 import pyarrow as pa
+import polars as pl
 
 import karnak3.core.log as kl
 import karnak3.core.util as ku
@@ -119,13 +120,34 @@ class KPandasDataFrameConstantFuture(KPandasDataFrameFuture):
 
 class KArrowTableFuture(KPandasDataFrameFuture):
     @abstractmethod
-    def to_table(self, timeout=None) -> Optional[pd.DataFrame]:
+    def to_table(self, timeout=None) -> Optional[pa.Table]:
         pass
+
+
+class KPolarsDataFrameFuture(KArrowTableFuture):
+    @abstractmethod
+    def to_pl(self, timeout=None) -> Optional[pl.DataFrame]:
+        pass
+
+
+class KPolarsDataFrameFutureArrowWrapper(KPolarsDataFrameFuture):
+
+    def __init__(self, k_arrow_table_future: KArrowTableFuture):
+        self.k_arrow_table_future = k_arrow_table_future
+
+    def to_pl(self, timeout=None) -> Optional[pl.DataFrame]:
+        pat = self.to_table(timeout=timeout)
+        return pl.DataFrame(pat) if pat is not None else None
+
+    def to_table(self, timeout=None) -> Optional[pd.DataFrame]:
+        return self.k_arrow_table_future.to_table(timeout=timeout)
+
+    def to_df(self, timeout=None, save_memory: bool = False) -> Optional[pd.DataFrame]:
+        return self.k_arrow_table_future.to_df(timeout=timeout, save_memory=save_memory)
 
 
 class KarnakDBException(ku.KarnakException):
     pass
-
 
 
 class KSqlAlchemyEngine:
@@ -165,11 +187,20 @@ class KSqlAlchemyEngine:
     def _result_pa(self, cursor, result) -> Optional[pa.Table]:
         raise ku.KarnakInternalError('method not implememented: _result_pa')
 
+    def _result_pl(self, cursor, result) -> Optional[pl.DataFrame]:
+        pat = self._result_pa(cursor=cursor, result=result)
+        return pl.DataFrame(pat) if pat is not None else None
+
     def _result_pd_async(self, cursor, result) -> KPandasDataFrameFuture:
         raise ku.KarnakInternalError('method not implememented: _result_pd_async')
 
     def _result_pa_async(self, cursor, result) -> KArrowTableFuture:
         raise ku.KarnakInternalError('method not implememented: _result_pa_async')
+
+    def _result_pl_async(self, cursor, result) -> KPolarsDataFrameFuture:
+        wrapped_future_arrow: KArrowTableFuture = self._result_pa_async(cursor, result)
+        wrapped_future_polars = KPolarsDataFrameFutureArrowWrapper(wrapped_future_arrow)
+        return wrapped_future_polars
 
     # TEST compatibility with other libs
     def test_libs_compatibility(self):
@@ -217,6 +248,24 @@ class KSqlAlchemyEngine:
                 del result
                 return result_pa
 
+    def select_pl(self, sql: str,
+                  params: Union[dict, list, None] = None,
+                  paramstyle: str = None) -> pl.DataFrame:
+        _sql, _params = self._convert_sql(sql=sql, params=params, paramstyle=paramstyle)
+        with contextlib.closing(self._connection()) as conn:
+            with conn.cursor() as cursor:
+                result = self._cursor_execute(cursor, _sql, _params)
+                result_pl = self._result_pl(cursor, result)
+                del result
+                return result_pl
+
+    #
+    # def select_pl(self, sql: str,
+    #               params: Union[dict, list, None] = None,
+    #               paramstyle: str = None) -> pl.DataFrame:
+    #     pat = self.select_pa(sql=sql, params=params, paramstyle=paramstyle)
+    #     return pl.DataFrame(pat) if pat is not None else None
+
     def select_pd(self, sql: str,
                   params: Union[dict, list, None] = None,
                   paramstyle: str = None) -> pd.DataFrame:
@@ -263,5 +312,17 @@ class KSqlAlchemyEngine:
             with conn.cursor(**_cursor_params) as cursor:
                 result = self._cursor_execute(cursor, _sql, _params)
                 wrapped_future = self._result_pd_async(cursor, result)
+                del result
+                return wrapped_future
+
+    def select_pl_async(self, sql: str,
+                        params: Union[dict, list, None] = None,
+                        paramstyle: str = None) -> KPolarsDataFrameFuture:
+        _sql, _params = self._convert_sql(sql=sql, params=params, paramstyle=paramstyle)
+        _cursor_params = self._cursor_params()
+        with contextlib.closing(self._connection()) as conn:
+            with conn.cursor(**_cursor_params) as cursor:
+                result = self._cursor_execute(cursor, _sql, _params)
+                wrapped_future = self._result_pl_async(cursor, result)
                 del result
                 return wrapped_future

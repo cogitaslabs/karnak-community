@@ -1,5 +1,7 @@
 from typing import Optional, Dict
 import pandas as pd
+import pyarrow as pa
+import polars as pl
 
 import redshift_connector
 import sqlalchemy.pool
@@ -39,6 +41,11 @@ class RedshiftEngine(KSqlAlchemyEngine):
 
     def _result_pd(self, cursor, result) -> Optional[pd.DataFrame]:
         return cursor.fetch_dataframe()
+
+    def _result_pl(self, cursor, result) -> Optional[pl.DataFrame]:
+        df = cursor.fetch_dataframe()
+        pl_df = pl.DataFrame(df)
+        return pl_df
 
 
 def get_runtime_config(args: Optional[Dict[str, str]] = None):
