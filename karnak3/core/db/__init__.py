@@ -224,9 +224,10 @@ class KSqlAlchemyEngine:
 
         # log parameterized query
         _limited_params = params
-        if limit_log_size and params is not None:
-            max_params = 32
-            _limited_params = dict(list(params.items())[:max_params])
+        max_params_limited = 32
+        if limit_log_size and params is not None and len(params) > max_params_limited:
+            _limited_params = dict(list(params.items())[:max_params_limited])
+            _limited_params['parameters not shown'] = len(params) - max_params_limited
 
         _logger.debug(f'running query on {_engine_str}, sql: {sql_one_line}, '
                       f'params {_limited_params}')
@@ -236,10 +237,10 @@ class KSqlAlchemyEngine:
 
         # log plain query
         _plain_sql_limited = plain_sql
-        if limit_log_size:
-            max_sql_limited_log_size = 1024
+        max_sql_limited_log_size = 1024
+        if limit_log_size and len(plain_sql) > max_sql_limited_log_size:
             _plain_sql_limited = plain_sql[:max_sql_limited_log_size]
-        _logger.debug(f'plain query: {_plain_sql_limited}')
+        _logger.debug(f'plain query: {_plain_sql_limited}... (full sql size: {len(plain_sql)})')
 
         _sql, _params = convert_paramstyle(sql_one_line, params, in_style=_paramstyle,
                                            out_style=self.paramstyle_driver)
