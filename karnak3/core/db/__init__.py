@@ -215,16 +215,32 @@ class KSqlAlchemyEngine:
 
     def _convert_sql(self, sql: str,
                      params: Union[dict, list, None] = None,
-                     paramstyle: str = None) -> Tuple[str, Union[dict, list, None]]:
+                     paramstyle: str = None,
+                     limit_log_size: bool = True) -> Tuple[str, Union[dict, list, None]]:
         _paramstyle = paramstyle if paramstyle is not None else self.paramstyle_client
 
         sql_one_line = ' '.join(sql.split())
         _engine_str = self._engine_short_description()
+
+        # log parameterized query
+        _limited_params = params
+        if limit_log_size and params is not None:
+            max_params = 32
+            _limited_params = dict(list(params.items())[:max_params])
+
         _logger.debug(f'running query on {_engine_str}, sql: {sql_one_line}, '
-                      f'params {params}')
+                      f'params {_limited_params}')
+
         plain_sql, _ = convert_paramstyle(sql_one_line, params, in_style=_paramstyle,
                                           out_style='plain')
-        _logger.debug(f'plain query: {plain_sql}')
+
+        # log plain query
+        _plain_sql_limited = plain_sql
+        if limit_log_size:
+            max_sql_limited_log_size = 1024
+            _plain_sql_limited = plain_sql[:max_sql_limited_log_size]
+        _logger.debug(f'plain query: {_plain_sql_limited}')
+
         _sql, _params = convert_paramstyle(sql_one_line, params, in_style=_paramstyle,
                                            out_style=self.paramstyle_driver)
         return _sql, _params
