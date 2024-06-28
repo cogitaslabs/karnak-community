@@ -237,7 +237,7 @@ class KSqlAlchemyEngine:
 
         # log plain query
         _plain_sql_limited = plain_sql
-        max_sql_limited_log_size = 1024
+        max_sql_limited_log_size = 8192
         if limit_log_size and len(plain_sql) > max_sql_limited_log_size:
             _plain_sql_limited = plain_sql[:max_sql_limited_log_size]
         _logger.debug(f'plain query: {_plain_sql_limited}... (full sql size: {len(plain_sql)})')
