@@ -255,13 +255,13 @@ class SqsFetcher:
             if len(items) == 0:
                 break
             remaining -= len(items)
-            fetched_data = [i.content for i in items]
+            fetched_data = [i.content for i in items if i is not None and i.get('content') is not None]
             fetched_df = self.data_to_df(fetched_data)
 
             self.save_consolidated(fetched_df, **args)
             del fetched_df
 
-            handles = [i.handle for i in items]
+            handles = [i.handle for i in items if i is not None and i.get('content') is not None]
             ksqs.remove_messages(queue_name=self.results_queue, receipt_handles=handles)
             del fetched_data
 
