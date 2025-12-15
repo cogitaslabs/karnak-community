@@ -60,7 +60,8 @@ class FetcherItem:
                             fetch_errors=d['fetch_errors'],
                             handle=handle)
         except KeyError:
-            msg = string.replace("\n", "")
+            # msg = string.replace("\n", "")
+            msg = f'sqs handle: {handle}'
             kl.error(f'invalid message: {msg}')
             return None
         return f
